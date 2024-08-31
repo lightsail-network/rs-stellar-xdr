@@ -22,7 +22,7 @@ pub const XDR_FILES_SHA256: [(&str, &str); 12] = [
     ),
     (
         "xdr/next/Stellar-contract-config-setting.x",
-        "c92782d7c6d6f0ea0b2148cabc66c557f38cb23714257f2131235a88f4282366",
+        "393369678663cb0f9471a0b69e2a9cfa3ac93c4415fa40cec166e9a231ecbe0d",
     ),
     (
         "xdr/next/Stellar-contract-env-meta.x",
@@ -46,11 +46,11 @@ pub const XDR_FILES_SHA256: [(&str, &str); 12] = [
     ),
     (
         "xdr/next/Stellar-ledger-entries.x",
-        "5dea4f695f01aeb57ad97b97646f3da7dcf5ec35748e5065b19de429fb762cbc",
+        "03e8be938bace784410b0e837ed6496ff66dc0d1e70fc6e4f0d006566a344879",
     ),
     (
         "xdr/next/Stellar-ledger.x",
-        "79692619a21814327f00560b47742f0074c9d9712051bbdc135d851ffe3fcfed",
+        "c2ac5bde5da28d4d02e2ea455f3bc5d5133adf271d374010cebe4e314c8504e8",
     ),
     (
         "xdr/next/Stellar-overlay.x",
@@ -58,11 +58,11 @@ pub const XDR_FILES_SHA256: [(&str, &str); 12] = [
     ),
     (
         "xdr/next/Stellar-transaction.x",
-        "bf6050037be5e1a42371a1cc151be23c8908b35220a8f1d8b0d4d6bd7f3b36ed",
+        "a938e583ab5d25237c51f355a47446215575b720150db89a1cecf13773249df1",
     ),
     (
         "xdr/next/Stellar-types.x",
-        "afe02efc4e6767ed8909c3b4350c4045449b614ce487adcf7e9f816f309bf6f8",
+        "253f515fc5e06bc938105e92a4c7f562251d4ebc178d39d6e6751e6b85fe1064",
     ),
 ];
 
@@ -93,6 +93,7 @@ use alloc::{
     borrow::ToOwned,
     boxed::Box,
     string::{FromUtf8Error, String},
+    vec,
     vec::Vec,
 };
 #[cfg(feature = "std")]
@@ -103,10 +104,16 @@ use arbitrary::Arbitrary;
 
 // TODO: Add support for read/write xdr fns when std not available.
 
-#[cfg(feature = "std")]
+#[cfg(all(not(feature = "no_std"), feature = "std"))]
 use std::{
     error, io,
-    io::{BufRead, BufReader, Cursor, Read, Write},
+    io::{BufRead, BufReader, Cursor, Read, Result as IOResult, Write},
+};
+
+#[cfg(all(not(feature = "std"), feature = "no_std"))]
+use core2::{
+    error, io,
+    io::{BufRead, Cursor, Read, Result as IOResult, Write},
 };
 
 /// Error contains all errors returned by functions in this crate. It can be
@@ -122,7 +129,7 @@ pub enum Error {
     Utf8Error(core::str::Utf8Error),
     #[cfg(feature = "alloc")]
     InvalidHex,
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     Io(io::Error),
     DepthLimitExceeded,
     #[cfg(feature = "serde_json")]
@@ -140,14 +147,14 @@ impl PartialEq for Error {
             // case for comparing errors outputted by the XDR library is for
             // error case testing, and a lack of the ability to compare has a
             // detrimental affect on failure testing, so this is a tradeoff.
-            #[cfg(feature = "std")]
+            #[cfg(any(feature = "std", feature = "no_std"))]
             (Self::Io(l), Self::Io(r)) => l.kind() == r.kind(),
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
         }
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "no_std"))]
 impl error::Error for Error {
     #[must_use]
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
@@ -171,7 +178,7 @@ impl fmt::Display for Error {
             Error::Utf8Error(e) => write!(f, "{e}"),
             #[cfg(feature = "alloc")]
             Error::InvalidHex => write!(f, "hex invalid"),
-            #[cfg(feature = "std")]
+            #[cfg(any(feature = "std", feature = "no_std"))]
             Error::Io(e) => write!(f, "{e}"),
             Error::DepthLimitExceeded => write!(f, "depth limit exceeded"),
             #[cfg(feature = "serde_json")]
@@ -202,7 +209,7 @@ impl From<FromUtf8Error> for Error {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "no_std"))]
 impl From<io::Error> for Error {
     #[must_use]
     fn from(e: io::Error) -> Self {
@@ -258,7 +265,7 @@ where
 
 /// `Limits` contains the limits that a limited reader or writer will be
 /// constrained to.
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "no_std"))]
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Limits {
     /// Defines the maximum depth for recursive calls in `Read/WriteXdr` to
@@ -275,7 +282,7 @@ pub struct Limits {
     pub len: usize,
 }
 
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "no_std"))]
 impl Limits {
     #[must_use]
     pub fn none() -> Self {
@@ -306,13 +313,13 @@ impl Limits {
 ///
 /// Intended for use with readers and writers and limiting their reads and
 /// writes.
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "no_std"))]
 pub struct Limited<L> {
     pub inner: L,
     pub(crate) limits: Limits,
 }
 
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "no_std"))]
 impl<L> Limited<L> {
     /// Constructs a new `Limited`.
     ///
@@ -357,18 +364,18 @@ impl<L> Limited<L> {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "no_std"))]
 impl<R: Read> Read for Limited<R> {
     /// Forwards the read operation to the wrapped object.
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> IOResult<usize> {
         self.inner.read(buf)
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "no_std"))]
 impl<R: BufRead> BufRead for Limited<R> {
     /// Forwards the read operation to the wrapped object.
-    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+    fn fill_buf(&mut self) -> IOResult<&[u8]> {
         self.inner.fill_buf()
     }
 
@@ -378,15 +385,15 @@ impl<R: BufRead> BufRead for Limited<R> {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "no_std"))]
 impl<W: Write> Write for Limited<W> {
     /// Forwards the write operation to the wrapped object.
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> IOResult<usize> {
         self.inner.write(buf)
     }
 
     /// Forwards the flush operation to the wrapped object.
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> IOResult<()> {
         self.inner.flush()
     }
 }
@@ -464,7 +471,7 @@ where
     ///
     /// Use [`ReadXdR: Read_xdr_to_end`] when the intent is for all bytes in the
     /// read implementation to be consumed by the read.
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self>;
 
     /// Construct the type from the XDR bytes base64 encoded.
@@ -499,7 +506,7 @@ where
     ///
     /// All implementations should continue if the read implementation returns
     /// [`ErrorKind::Interrupted`](std::io::ErrorKind::Interrupted).
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr_to_end<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         let s = Self::read_xdr(r)?;
         // Check that any further reads, such as this read of one byte, read no
@@ -539,7 +546,7 @@ where
     ///
     /// Use [`ReadXdR: Read_xdr_into_to_end`] when the intent is for all bytes
     /// in the read implementation to be consumed by the read.
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr_into<R: Read>(&mut self, r: &mut Limited<R>) -> Result<()> {
         *self = Self::read_xdr(r)?;
         Ok(())
@@ -563,7 +570,7 @@ where
     ///
     /// All implementations should continue if the read implementation returns
     /// [`ErrorKind::Interrupted`](std::io::ErrorKind::Interrupted).
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr_into_to_end<R: Read>(&mut self, r: &mut Limited<R>) -> Result<()> {
         Self::read_xdr_into(self, r)?;
         // Check that any further reads, such as this read of one byte, read no
@@ -612,7 +619,7 @@ where
     ///
     /// An error is returned if the bytes are not completely consumed by the
     /// deserialization.
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn from_xdr(bytes: impl AsRef<[u8]>, limits: Limits) -> Result<Self> {
         let mut cursor = Limited::new(Cursor::new(bytes.as_ref()), limits);
         let t = Self::read_xdr_to_end(&mut cursor)?;
@@ -636,10 +643,10 @@ where
 }
 
 pub trait WriteXdr {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()>;
 
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn to_xdr(&self, limits: Limits) -> Result<Vec<u8>> {
         let mut cursor = Limited::new(Cursor::new(vec![]), limits);
         self.write_xdr(&mut cursor)?;
@@ -661,13 +668,13 @@ pub trait WriteXdr {
 
 /// `Pad_len` returns the number of bytes to pad an XDR value of the given
 /// length to make the final serialized size a multiple of 4.
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "no_std"))]
 fn pad_len(len: usize) -> usize {
     (4 - (len % 4)) % 4
 }
 
 impl ReadXdr for i32 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         let mut b = [0u8; 4];
         r.with_limited_depth(|r| {
@@ -679,7 +686,7 @@ impl ReadXdr for i32 {
 }
 
 impl WriteXdr for i32 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         let b: [u8; 4] = self.to_be_bytes();
         w.with_limited_depth(|w| {
@@ -690,7 +697,7 @@ impl WriteXdr for i32 {
 }
 
 impl ReadXdr for u32 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         let mut b = [0u8; 4];
         r.with_limited_depth(|r| {
@@ -702,7 +709,7 @@ impl ReadXdr for u32 {
 }
 
 impl WriteXdr for u32 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         let b: [u8; 4] = self.to_be_bytes();
         w.with_limited_depth(|w| {
@@ -713,7 +720,7 @@ impl WriteXdr for u32 {
 }
 
 impl ReadXdr for i64 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         let mut b = [0u8; 8];
         r.with_limited_depth(|r| {
@@ -725,7 +732,7 @@ impl ReadXdr for i64 {
 }
 
 impl WriteXdr for i64 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         let b: [u8; 8] = self.to_be_bytes();
         w.with_limited_depth(|w| {
@@ -736,7 +743,7 @@ impl WriteXdr for i64 {
 }
 
 impl ReadXdr for u64 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         let mut b = [0u8; 8];
         r.with_limited_depth(|r| {
@@ -748,7 +755,7 @@ impl ReadXdr for u64 {
 }
 
 impl WriteXdr for u64 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         let b: [u8; 8] = self.to_be_bytes();
         w.with_limited_depth(|w| {
@@ -759,35 +766,35 @@ impl WriteXdr for u64 {
 }
 
 impl ReadXdr for f32 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(_r: &mut Limited<R>) -> Result<Self> {
         todo!()
     }
 }
 
 impl WriteXdr for f32 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, _w: &mut Limited<W>) -> Result<()> {
         todo!()
     }
 }
 
 impl ReadXdr for f64 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(_r: &mut Limited<R>) -> Result<Self> {
         todo!()
     }
 }
 
 impl WriteXdr for f64 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, _w: &mut Limited<W>) -> Result<()> {
         todo!()
     }
 }
 
 impl ReadXdr for bool {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = u32::read_xdr(r)?;
@@ -798,7 +805,7 @@ impl ReadXdr for bool {
 }
 
 impl WriteXdr for bool {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i = u32::from(*self); // true = 1, false = 0
@@ -808,7 +815,7 @@ impl WriteXdr for bool {
 }
 
 impl<T: ReadXdr> ReadXdr for Option<T> {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = u32::read_xdr(r)?;
@@ -825,7 +832,7 @@ impl<T: ReadXdr> ReadXdr for Option<T> {
 }
 
 impl<T: WriteXdr> WriteXdr for Option<T> {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             if let Some(t) = self {
@@ -840,35 +847,35 @@ impl<T: WriteXdr> WriteXdr for Option<T> {
 }
 
 impl<T: ReadXdr> ReadXdr for Box<T> {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| Ok(Box::new(T::read_xdr(r)?)))
     }
 }
 
 impl<T: WriteXdr> WriteXdr for Box<T> {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| T::write_xdr(self, w))
     }
 }
 
 impl ReadXdr for () {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(_r: &mut Limited<R>) -> Result<Self> {
         Ok(())
     }
 }
 
 impl WriteXdr for () {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, _w: &mut Limited<W>) -> Result<()> {
         Ok(())
     }
 }
 
 impl<const N: usize> ReadXdr for [u8; N] {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             r.consume_len(N)?;
@@ -887,7 +894,7 @@ impl<const N: usize> ReadXdr for [u8; N] {
 }
 
 impl<const N: usize> WriteXdr for [u8; N] {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             w.consume_len(N)?;
@@ -901,7 +908,7 @@ impl<const N: usize> WriteXdr for [u8; N] {
 }
 
 impl<T: ReadXdr, const N: usize> ReadXdr for [T; N] {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let mut vec = Vec::with_capacity(N);
@@ -916,7 +923,7 @@ impl<T: ReadXdr, const N: usize> ReadXdr for [T; N] {
 }
 
 impl<T: WriteXdr, const N: usize> WriteXdr for [T; N] {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             for t in self {
@@ -1275,7 +1282,7 @@ impl<'a, const MAX: u32> TryFrom<&'a VecM<u8, MAX>> for &'a str {
 }
 
 impl<const MAX: u32> ReadXdr for VecM<u8, MAX> {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let len: u32 = u32::read_xdr(r)?;
@@ -1302,7 +1309,7 @@ impl<const MAX: u32> ReadXdr for VecM<u8, MAX> {
 }
 
 impl<const MAX: u32> WriteXdr for VecM<u8, MAX> {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let len: u32 = self.len().try_into().map_err(|_| Error::LengthExceedsMax)?;
@@ -1322,7 +1329,7 @@ impl<const MAX: u32> WriteXdr for VecM<u8, MAX> {
 }
 
 impl<T: ReadXdr, const MAX: u32> ReadXdr for VecM<T, MAX> {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let len = u32::read_xdr(r)?;
@@ -1342,7 +1349,7 @@ impl<T: ReadXdr, const MAX: u32> ReadXdr for VecM<T, MAX> {
 }
 
 impl<T: WriteXdr, const MAX: u32> WriteXdr for VecM<T, MAX> {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let len: u32 = self.len().try_into().map_err(|_| Error::LengthExceedsMax)?;
@@ -1715,7 +1722,7 @@ impl<'a, const MAX: u32> TryFrom<&'a BytesM<MAX>> for &'a str {
 }
 
 impl<const MAX: u32> ReadXdr for BytesM<MAX> {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let len: u32 = u32::read_xdr(r)?;
@@ -1742,7 +1749,7 @@ impl<const MAX: u32> ReadXdr for BytesM<MAX> {
 }
 
 impl<const MAX: u32> WriteXdr for BytesM<MAX> {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let len: u32 = self.len().try_into().map_err(|_| Error::LengthExceedsMax)?;
@@ -2118,7 +2125,7 @@ impl<'a, const MAX: u32> TryFrom<&'a StringM<MAX>> for &'a str {
 }
 
 impl<const MAX: u32> ReadXdr for StringM<MAX> {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let len: u32 = u32::read_xdr(r)?;
@@ -2145,7 +2152,7 @@ impl<const MAX: u32> ReadXdr for StringM<MAX> {
 }
 
 impl<const MAX: u32> WriteXdr for StringM<MAX> {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let len: u32 = self.len().try_into().map_err(|_| Error::LengthExceedsMax)?;
@@ -2191,7 +2198,7 @@ impl<T> ReadXdr for Frame<T>
 where
     T: ReadXdr,
 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         // Read the frame header value that contains 1 flag-bit and a 33-bit length.
         //  - The 1 flag bit is 0 when there are more frames for the same record.
@@ -2876,7 +2883,7 @@ impl AsRef<BytesM> for Value {
 }
 
 impl ReadXdr for Value {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = BytesM::read_xdr(r)?;
@@ -2887,7 +2894,7 @@ impl ReadXdr for Value {
 }
 
 impl WriteXdr for Value {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -2966,7 +2973,7 @@ pub struct ScpBallot {
 }
 
 impl ReadXdr for ScpBallot {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -2978,7 +2985,7 @@ impl ReadXdr for ScpBallot {
 }
 
 impl WriteXdr for ScpBallot {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.counter.write_xdr(w)?;
@@ -3087,7 +3094,7 @@ impl From<ScpStatementType> for i32 {
 }
 
 impl ReadXdr for ScpStatementType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -3098,7 +3105,7 @@ impl ReadXdr for ScpStatementType {
 }
 
 impl WriteXdr for ScpStatementType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -3133,7 +3140,7 @@ pub struct ScpNomination {
 }
 
 impl ReadXdr for ScpNomination {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -3146,7 +3153,7 @@ impl ReadXdr for ScpNomination {
 }
 
 impl WriteXdr for ScpNomination {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.quorum_set_hash.write_xdr(w)?;
@@ -3189,7 +3196,7 @@ pub struct ScpStatementPrepare {
 }
 
 impl ReadXdr for ScpStatementPrepare {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -3205,7 +3212,7 @@ impl ReadXdr for ScpStatementPrepare {
 }
 
 impl WriteXdr for ScpStatementPrepare {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.quorum_set_hash.write_xdr(w)?;
@@ -3249,7 +3256,7 @@ pub struct ScpStatementConfirm {
 }
 
 impl ReadXdr for ScpStatementConfirm {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -3264,7 +3271,7 @@ impl ReadXdr for ScpStatementConfirm {
 }
 
 impl WriteXdr for ScpStatementConfirm {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ballot.write_xdr(w)?;
@@ -3303,7 +3310,7 @@ pub struct ScpStatementExternalize {
 }
 
 impl ReadXdr for ScpStatementExternalize {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -3316,7 +3323,7 @@ impl ReadXdr for ScpStatementExternalize {
 }
 
 impl WriteXdr for ScpStatementExternalize {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.commit.write_xdr(w)?;
@@ -3439,7 +3446,7 @@ impl Variants<ScpStatementType> for ScpStatementPledges {
 impl Union<ScpStatementType> for ScpStatementPledges {}
 
 impl ReadXdr for ScpStatementPledges {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ScpStatementType = <ScpStatementType as ReadXdr>::read_xdr(r)?;
@@ -3460,7 +3467,7 @@ impl ReadXdr for ScpStatementPledges {
 }
 
 impl WriteXdr for ScpStatementPledges {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -3534,7 +3541,7 @@ pub struct ScpStatement {
 }
 
 impl ReadXdr for ScpStatement {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -3547,7 +3554,7 @@ impl ReadXdr for ScpStatement {
 }
 
 impl WriteXdr for ScpStatement {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.node_id.write_xdr(w)?;
@@ -3582,7 +3589,7 @@ pub struct ScpEnvelope {
 }
 
 impl ReadXdr for ScpEnvelope {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -3594,7 +3601,7 @@ impl ReadXdr for ScpEnvelope {
 }
 
 impl WriteXdr for ScpEnvelope {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.statement.write_xdr(w)?;
@@ -3630,7 +3637,7 @@ pub struct ScpQuorumSet {
 }
 
 impl ReadXdr for ScpQuorumSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -3643,7 +3650,7 @@ impl ReadXdr for ScpQuorumSet {
 }
 
 impl WriteXdr for ScpQuorumSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.threshold.write_xdr(w)?;
@@ -3677,7 +3684,7 @@ pub struct ConfigSettingContractExecutionLanesV0 {
 }
 
 impl ReadXdr for ConfigSettingContractExecutionLanesV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -3688,7 +3695,7 @@ impl ReadXdr for ConfigSettingContractExecutionLanesV0 {
 }
 
 impl WriteXdr for ConfigSettingContractExecutionLanesV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ledger_max_tx_count.write_xdr(w)?;
@@ -3731,7 +3738,7 @@ pub struct ConfigSettingContractComputeV0 {
 }
 
 impl ReadXdr for ConfigSettingContractComputeV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -3745,61 +3752,13 @@ impl ReadXdr for ConfigSettingContractComputeV0 {
 }
 
 impl WriteXdr for ConfigSettingContractComputeV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ledger_max_instructions.write_xdr(w)?;
             self.tx_max_instructions.write_xdr(w)?;
             self.fee_rate_per_instructions_increment.write_xdr(w)?;
             self.tx_memory_limit.write_xdr(w)?;
-            Ok(())
-        })
-    }
-}
-
-/// ConfigSettingContractParallelComputeV0 is an XDR Struct defines as:
-///
-/// ```text
-/// struct ConfigSettingContractParallelComputeV0
-/// {
-///     // Maximum number of threads that can be used to apply a
-///     // transaction set to close the ledger.
-///     // This doesn't limit or defined the actual number of
-///     // threads used and instead only defines the minimum number
-///     // of physical threads that a tier-1 validator has to support
-///     // in order to not fall out of sync with the network.
-///     uint32 ledgerMaxParallelThreads;
-/// };
-/// ```
-///
-#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
-#[cfg_attr(
-    all(feature = "serde", feature = "alloc"),
-    derive(serde::Serialize, serde::Deserialize),
-    serde(rename_all = "snake_case")
-)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-pub struct ConfigSettingContractParallelComputeV0 {
-    pub ledger_max_parallel_threads: u32,
-}
-
-impl ReadXdr for ConfigSettingContractParallelComputeV0 {
-    #[cfg(feature = "std")]
-    fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
-        r.with_limited_depth(|r| {
-            Ok(Self {
-                ledger_max_parallel_threads: u32::read_xdr(r)?,
-            })
-        })
-    }
-}
-
-impl WriteXdr for ConfigSettingContractParallelComputeV0 {
-    #[cfg(feature = "std")]
-    fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
-        w.with_limited_depth(|w| {
-            self.ledger_max_parallel_threads.write_xdr(w)?;
             Ok(())
         })
     }
@@ -3872,7 +3831,7 @@ pub struct ConfigSettingContractLedgerCostV0 {
 }
 
 impl ReadXdr for ConfigSettingContractLedgerCostV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -3897,7 +3856,7 @@ impl ReadXdr for ConfigSettingContractLedgerCostV0 {
 }
 
 impl WriteXdr for ConfigSettingContractLedgerCostV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ledger_max_read_ledger_entries.write_xdr(w)?;
@@ -3942,7 +3901,7 @@ pub struct ConfigSettingContractHistoricalDataV0 {
 }
 
 impl ReadXdr for ConfigSettingContractHistoricalDataV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -3953,7 +3912,7 @@ impl ReadXdr for ConfigSettingContractHistoricalDataV0 {
 }
 
 impl WriteXdr for ConfigSettingContractHistoricalDataV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.fee_historical1_kb.write_xdr(w)?;
@@ -3988,7 +3947,7 @@ pub struct ConfigSettingContractEventsV0 {
 }
 
 impl ReadXdr for ConfigSettingContractEventsV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -4000,7 +3959,7 @@ impl ReadXdr for ConfigSettingContractEventsV0 {
 }
 
 impl WriteXdr for ConfigSettingContractEventsV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.tx_max_contract_events_size_bytes.write_xdr(w)?;
@@ -4040,7 +3999,7 @@ pub struct ConfigSettingContractBandwidthV0 {
 }
 
 impl ReadXdr for ConfigSettingContractBandwidthV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -4053,7 +4012,7 @@ impl ReadXdr for ConfigSettingContractBandwidthV0 {
 }
 
 impl WriteXdr for ConfigSettingContractBandwidthV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ledger_max_txs_size_bytes.write_xdr(w)?;
@@ -4467,7 +4426,7 @@ impl From<ContractCostType> for i32 {
 }
 
 impl ReadXdr for ContractCostType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -4478,7 +4437,7 @@ impl ReadXdr for ContractCostType {
 }
 
 impl WriteXdr for ContractCostType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -4514,7 +4473,7 @@ pub struct ContractCostParamEntry {
 }
 
 impl ReadXdr for ContractCostParamEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -4527,7 +4486,7 @@ impl ReadXdr for ContractCostParamEntry {
 }
 
 impl WriteXdr for ContractCostParamEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -4589,7 +4548,7 @@ pub struct StateArchivalSettings {
 }
 
 impl ReadXdr for StateArchivalSettings {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -4609,7 +4568,7 @@ impl ReadXdr for StateArchivalSettings {
 }
 
 impl WriteXdr for StateArchivalSettings {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.max_entry_ttl.write_xdr(w)?;
@@ -4652,7 +4611,7 @@ pub struct EvictionIterator {
 }
 
 impl ReadXdr for EvictionIterator {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -4665,7 +4624,7 @@ impl ReadXdr for EvictionIterator {
 }
 
 impl WriteXdr for EvictionIterator {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.bucket_list_level.write_xdr(w)?;
@@ -4724,7 +4683,7 @@ impl AsRef<VecM<ContractCostParamEntry, 1024>> for ContractCostParams {
 }
 
 impl ReadXdr for ContractCostParams {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = VecM::<ContractCostParamEntry, 1024>::read_xdr(r)?;
@@ -4735,7 +4694,7 @@ impl ReadXdr for ContractCostParams {
 }
 
 impl WriteXdr for ContractCostParams {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -4808,8 +4767,7 @@ impl AsRef<[ContractCostParamEntry]> for ContractCostParams {
 ///     CONFIG_SETTING_STATE_ARCHIVAL = 10,
 ///     CONFIG_SETTING_CONTRACT_EXECUTION_LANES = 11,
 ///     CONFIG_SETTING_BUCKETLIST_SIZE_WINDOW = 12,
-///     CONFIG_SETTING_EVICTION_ITERATOR = 13,
-///     CONFIG_SETTING_CONTRACT_PARALLEL_COMPUTE_V0 = 14
+///     CONFIG_SETTING_EVICTION_ITERATOR = 13
 /// };
 /// ```
 ///
@@ -4838,11 +4796,10 @@ pub enum ConfigSettingId {
     ContractExecutionLanes = 11,
     BucketlistSizeWindow = 12,
     EvictionIterator = 13,
-    ContractParallelComputeV0 = 14,
 }
 
 impl ConfigSettingId {
-    pub const VARIANTS: [ConfigSettingId; 15] = [
+    pub const VARIANTS: [ConfigSettingId; 14] = [
         ConfigSettingId::ContractMaxSizeBytes,
         ConfigSettingId::ContractComputeV0,
         ConfigSettingId::ContractLedgerCostV0,
@@ -4857,9 +4814,8 @@ impl ConfigSettingId {
         ConfigSettingId::ContractExecutionLanes,
         ConfigSettingId::BucketlistSizeWindow,
         ConfigSettingId::EvictionIterator,
-        ConfigSettingId::ContractParallelComputeV0,
     ];
-    pub const VARIANTS_STR: [&'static str; 15] = [
+    pub const VARIANTS_STR: [&'static str; 14] = [
         "ContractMaxSizeBytes",
         "ContractComputeV0",
         "ContractLedgerCostV0",
@@ -4874,7 +4830,6 @@ impl ConfigSettingId {
         "ContractExecutionLanes",
         "BucketlistSizeWindow",
         "EvictionIterator",
-        "ContractParallelComputeV0",
     ];
 
     #[must_use]
@@ -4894,12 +4849,11 @@ impl ConfigSettingId {
             Self::ContractExecutionLanes => "ContractExecutionLanes",
             Self::BucketlistSizeWindow => "BucketlistSizeWindow",
             Self::EvictionIterator => "EvictionIterator",
-            Self::ContractParallelComputeV0 => "ContractParallelComputeV0",
         }
     }
 
     #[must_use]
-    pub const fn variants() -> [ConfigSettingId; 15] {
+    pub const fn variants() -> [ConfigSettingId; 14] {
         Self::VARIANTS
     }
 }
@@ -4944,7 +4898,6 @@ impl TryFrom<i32> for ConfigSettingId {
             11 => ConfigSettingId::ContractExecutionLanes,
             12 => ConfigSettingId::BucketlistSizeWindow,
             13 => ConfigSettingId::EvictionIterator,
-            14 => ConfigSettingId::ContractParallelComputeV0,
             #[allow(unreachable_patterns)]
             _ => return Err(Error::Invalid),
         };
@@ -4960,7 +4913,7 @@ impl From<ConfigSettingId> for i32 {
 }
 
 impl ReadXdr for ConfigSettingId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -4971,7 +4924,7 @@ impl ReadXdr for ConfigSettingId {
 }
 
 impl WriteXdr for ConfigSettingId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -5013,8 +4966,6 @@ impl WriteXdr for ConfigSettingId {
 ///     uint64 bucketListSizeWindow<>;
 /// case CONFIG_SETTING_EVICTION_ITERATOR:
 ///     EvictionIterator evictionIterator;
-/// case CONFIG_SETTING_CONTRACT_PARALLEL_COMPUTE_V0:
-///     ConfigSettingContractParallelComputeV0 contractParallelCompute;
 /// };
 /// ```
 ///
@@ -5043,11 +4994,10 @@ pub enum ConfigSettingEntry {
     ContractExecutionLanes(ConfigSettingContractExecutionLanesV0),
     BucketlistSizeWindow(VecM<u64>),
     EvictionIterator(EvictionIterator),
-    ContractParallelComputeV0(ConfigSettingContractParallelComputeV0),
 }
 
 impl ConfigSettingEntry {
-    pub const VARIANTS: [ConfigSettingId; 15] = [
+    pub const VARIANTS: [ConfigSettingId; 14] = [
         ConfigSettingId::ContractMaxSizeBytes,
         ConfigSettingId::ContractComputeV0,
         ConfigSettingId::ContractLedgerCostV0,
@@ -5062,9 +5012,8 @@ impl ConfigSettingEntry {
         ConfigSettingId::ContractExecutionLanes,
         ConfigSettingId::BucketlistSizeWindow,
         ConfigSettingId::EvictionIterator,
-        ConfigSettingId::ContractParallelComputeV0,
     ];
-    pub const VARIANTS_STR: [&'static str; 15] = [
+    pub const VARIANTS_STR: [&'static str; 14] = [
         "ContractMaxSizeBytes",
         "ContractComputeV0",
         "ContractLedgerCostV0",
@@ -5079,7 +5028,6 @@ impl ConfigSettingEntry {
         "ContractExecutionLanes",
         "BucketlistSizeWindow",
         "EvictionIterator",
-        "ContractParallelComputeV0",
     ];
 
     #[must_use]
@@ -5099,7 +5047,6 @@ impl ConfigSettingEntry {
             Self::ContractExecutionLanes(_) => "ContractExecutionLanes",
             Self::BucketlistSizeWindow(_) => "BucketlistSizeWindow",
             Self::EvictionIterator(_) => "EvictionIterator",
-            Self::ContractParallelComputeV0(_) => "ContractParallelComputeV0",
         }
     }
 
@@ -5125,12 +5072,11 @@ impl ConfigSettingEntry {
             Self::ContractExecutionLanes(_) => ConfigSettingId::ContractExecutionLanes,
             Self::BucketlistSizeWindow(_) => ConfigSettingId::BucketlistSizeWindow,
             Self::EvictionIterator(_) => ConfigSettingId::EvictionIterator,
-            Self::ContractParallelComputeV0(_) => ConfigSettingId::ContractParallelComputeV0,
         }
     }
 
     #[must_use]
-    pub const fn variants() -> [ConfigSettingId; 15] {
+    pub const fn variants() -> [ConfigSettingId; 14] {
         Self::VARIANTS
     }
 }
@@ -5158,7 +5104,7 @@ impl Variants<ConfigSettingId> for ConfigSettingEntry {
 impl Union<ConfigSettingId> for ConfigSettingEntry {}
 
 impl ReadXdr for ConfigSettingEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ConfigSettingId = <ConfigSettingId as ReadXdr>::read_xdr(r)?;
@@ -5206,9 +5152,6 @@ impl ReadXdr for ConfigSettingEntry {
                 ConfigSettingId::EvictionIterator => {
                     Self::EvictionIterator(EvictionIterator::read_xdr(r)?)
                 }
-                ConfigSettingId::ContractParallelComputeV0 => Self::ContractParallelComputeV0(
-                    ConfigSettingContractParallelComputeV0::read_xdr(r)?,
-                ),
                 #[allow(unreachable_patterns)]
                 _ => return Err(Error::Invalid),
             };
@@ -5218,7 +5161,7 @@ impl ReadXdr for ConfigSettingEntry {
 }
 
 impl WriteXdr for ConfigSettingEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -5238,7 +5181,6 @@ impl WriteXdr for ConfigSettingEntry {
                 Self::ContractExecutionLanes(v) => v.write_xdr(w)?,
                 Self::BucketlistSizeWindow(v) => v.write_xdr(w)?,
                 Self::EvictionIterator(v) => v.write_xdr(w)?,
-                Self::ContractParallelComputeV0(v) => v.write_xdr(w)?,
             };
             Ok(())
         })
@@ -5327,7 +5269,7 @@ impl From<ScEnvMetaKind> for i32 {
 }
 
 impl ReadXdr for ScEnvMetaKind {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -5338,7 +5280,7 @@ impl ReadXdr for ScEnvMetaKind {
 }
 
 impl WriteXdr for ScEnvMetaKind {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -5419,7 +5361,7 @@ impl Variants<ScEnvMetaKind> for ScEnvMetaEntry {
 impl Union<ScEnvMetaKind> for ScEnvMetaEntry {}
 
 impl ReadXdr for ScEnvMetaEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ScEnvMetaKind = <ScEnvMetaKind as ReadXdr>::read_xdr(r)?;
@@ -5437,7 +5379,7 @@ impl ReadXdr for ScEnvMetaEntry {
 }
 
 impl WriteXdr for ScEnvMetaEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -5474,7 +5416,7 @@ pub struct ScMetaV0 {
 }
 
 impl ReadXdr for ScMetaV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -5486,7 +5428,7 @@ impl ReadXdr for ScMetaV0 {
 }
 
 impl WriteXdr for ScMetaV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.key.write_xdr(w)?;
@@ -5578,7 +5520,7 @@ impl From<ScMetaKind> for i32 {
 }
 
 impl ReadXdr for ScMetaKind {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -5589,7 +5531,7 @@ impl ReadXdr for ScMetaKind {
 }
 
 impl WriteXdr for ScMetaKind {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -5670,7 +5612,7 @@ impl Variants<ScMetaKind> for ScMetaEntry {
 impl Union<ScMetaKind> for ScMetaEntry {}
 
 impl ReadXdr for ScMetaEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ScMetaKind = <ScMetaKind as ReadXdr>::read_xdr(r)?;
@@ -5686,7 +5628,7 @@ impl ReadXdr for ScMetaEntry {
 }
 
 impl WriteXdr for ScMetaEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -5943,7 +5885,7 @@ impl From<ScSpecType> for i32 {
 }
 
 impl ReadXdr for ScSpecType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -5954,7 +5896,7 @@ impl ReadXdr for ScSpecType {
 }
 
 impl WriteXdr for ScSpecType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -5985,7 +5927,7 @@ pub struct ScSpecTypeOption {
 }
 
 impl ReadXdr for ScSpecTypeOption {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -5996,7 +5938,7 @@ impl ReadXdr for ScSpecTypeOption {
 }
 
 impl WriteXdr for ScSpecTypeOption {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.value_type.write_xdr(w)?;
@@ -6029,7 +5971,7 @@ pub struct ScSpecTypeResult {
 }
 
 impl ReadXdr for ScSpecTypeResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -6041,7 +5983,7 @@ impl ReadXdr for ScSpecTypeResult {
 }
 
 impl WriteXdr for ScSpecTypeResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ok_type.write_xdr(w)?;
@@ -6073,7 +6015,7 @@ pub struct ScSpecTypeVec {
 }
 
 impl ReadXdr for ScSpecTypeVec {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -6084,7 +6026,7 @@ impl ReadXdr for ScSpecTypeVec {
 }
 
 impl WriteXdr for ScSpecTypeVec {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.element_type.write_xdr(w)?;
@@ -6117,7 +6059,7 @@ pub struct ScSpecTypeMap {
 }
 
 impl ReadXdr for ScSpecTypeMap {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -6129,7 +6071,7 @@ impl ReadXdr for ScSpecTypeMap {
 }
 
 impl WriteXdr for ScSpecTypeMap {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.key_type.write_xdr(w)?;
@@ -6161,7 +6103,7 @@ pub struct ScSpecTypeTuple {
 }
 
 impl ReadXdr for ScSpecTypeTuple {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -6172,7 +6114,7 @@ impl ReadXdr for ScSpecTypeTuple {
 }
 
 impl WriteXdr for ScSpecTypeTuple {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.value_types.write_xdr(w)?;
@@ -6203,7 +6145,7 @@ pub struct ScSpecTypeBytesN {
 }
 
 impl ReadXdr for ScSpecTypeBytesN {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -6214,7 +6156,7 @@ impl ReadXdr for ScSpecTypeBytesN {
 }
 
 impl WriteXdr for ScSpecTypeBytesN {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.n.write_xdr(w)?;
@@ -6245,7 +6187,7 @@ pub struct ScSpecTypeUdt {
 }
 
 impl ReadXdr for ScSpecTypeUdt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -6256,7 +6198,7 @@ impl ReadXdr for ScSpecTypeUdt {
 }
 
 impl WriteXdr for ScSpecTypeUdt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.name.write_xdr(w)?;
@@ -6492,7 +6434,7 @@ impl Variants<ScSpecType> for ScSpecTypeDef {
 impl Union<ScSpecType> for ScSpecTypeDef {}
 
 impl ReadXdr for ScSpecTypeDef {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ScSpecType = <ScSpecType as ReadXdr>::read_xdr(r)?;
@@ -6532,7 +6474,7 @@ impl ReadXdr for ScSpecTypeDef {
 }
 
 impl WriteXdr for ScSpecTypeDef {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -6595,7 +6537,7 @@ pub struct ScSpecUdtStructFieldV0 {
 }
 
 impl ReadXdr for ScSpecUdtStructFieldV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -6608,7 +6550,7 @@ impl ReadXdr for ScSpecUdtStructFieldV0 {
 }
 
 impl WriteXdr for ScSpecUdtStructFieldV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.doc.write_xdr(w)?;
@@ -6647,7 +6589,7 @@ pub struct ScSpecUdtStructV0 {
 }
 
 impl ReadXdr for ScSpecUdtStructV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -6661,7 +6603,7 @@ impl ReadXdr for ScSpecUdtStructV0 {
 }
 
 impl WriteXdr for ScSpecUdtStructV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.doc.write_xdr(w)?;
@@ -6697,7 +6639,7 @@ pub struct ScSpecUdtUnionCaseVoidV0 {
 }
 
 impl ReadXdr for ScSpecUdtUnionCaseVoidV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -6709,7 +6651,7 @@ impl ReadXdr for ScSpecUdtUnionCaseVoidV0 {
 }
 
 impl WriteXdr for ScSpecUdtUnionCaseVoidV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.doc.write_xdr(w)?;
@@ -6745,7 +6687,7 @@ pub struct ScSpecUdtUnionCaseTupleV0 {
 }
 
 impl ReadXdr for ScSpecUdtUnionCaseTupleV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -6758,7 +6700,7 @@ impl ReadXdr for ScSpecUdtUnionCaseTupleV0 {
 }
 
 impl WriteXdr for ScSpecUdtUnionCaseTupleV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.doc.write_xdr(w)?;
@@ -6858,7 +6800,7 @@ impl From<ScSpecUdtUnionCaseV0Kind> for i32 {
 }
 
 impl ReadXdr for ScSpecUdtUnionCaseV0Kind {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -6869,7 +6811,7 @@ impl ReadXdr for ScSpecUdtUnionCaseV0Kind {
 }
 
 impl WriteXdr for ScSpecUdtUnionCaseV0Kind {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -6958,7 +6900,7 @@ impl Variants<ScSpecUdtUnionCaseV0Kind> for ScSpecUdtUnionCaseV0 {
 impl Union<ScSpecUdtUnionCaseV0Kind> for ScSpecUdtUnionCaseV0 {}
 
 impl ReadXdr for ScSpecUdtUnionCaseV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ScSpecUdtUnionCaseV0Kind = <ScSpecUdtUnionCaseV0Kind as ReadXdr>::read_xdr(r)?;
@@ -6979,7 +6921,7 @@ impl ReadXdr for ScSpecUdtUnionCaseV0 {
 }
 
 impl WriteXdr for ScSpecUdtUnionCaseV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -7021,7 +6963,7 @@ pub struct ScSpecUdtUnionV0 {
 }
 
 impl ReadXdr for ScSpecUdtUnionV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -7035,7 +6977,7 @@ impl ReadXdr for ScSpecUdtUnionV0 {
 }
 
 impl WriteXdr for ScSpecUdtUnionV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.doc.write_xdr(w)?;
@@ -7073,7 +7015,7 @@ pub struct ScSpecUdtEnumCaseV0 {
 }
 
 impl ReadXdr for ScSpecUdtEnumCaseV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -7086,7 +7028,7 @@ impl ReadXdr for ScSpecUdtEnumCaseV0 {
 }
 
 impl WriteXdr for ScSpecUdtEnumCaseV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.doc.write_xdr(w)?;
@@ -7125,7 +7067,7 @@ pub struct ScSpecUdtEnumV0 {
 }
 
 impl ReadXdr for ScSpecUdtEnumV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -7139,7 +7081,7 @@ impl ReadXdr for ScSpecUdtEnumV0 {
 }
 
 impl WriteXdr for ScSpecUdtEnumV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.doc.write_xdr(w)?;
@@ -7177,7 +7119,7 @@ pub struct ScSpecUdtErrorEnumCaseV0 {
 }
 
 impl ReadXdr for ScSpecUdtErrorEnumCaseV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -7190,7 +7132,7 @@ impl ReadXdr for ScSpecUdtErrorEnumCaseV0 {
 }
 
 impl WriteXdr for ScSpecUdtErrorEnumCaseV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.doc.write_xdr(w)?;
@@ -7229,7 +7171,7 @@ pub struct ScSpecUdtErrorEnumV0 {
 }
 
 impl ReadXdr for ScSpecUdtErrorEnumV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -7243,7 +7185,7 @@ impl ReadXdr for ScSpecUdtErrorEnumV0 {
 }
 
 impl WriteXdr for ScSpecUdtErrorEnumV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.doc.write_xdr(w)?;
@@ -7281,7 +7223,7 @@ pub struct ScSpecFunctionInputV0 {
 }
 
 impl ReadXdr for ScSpecFunctionInputV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -7294,7 +7236,7 @@ impl ReadXdr for ScSpecFunctionInputV0 {
 }
 
 impl WriteXdr for ScSpecFunctionInputV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.doc.write_xdr(w)?;
@@ -7333,7 +7275,7 @@ pub struct ScSpecFunctionV0 {
 }
 
 impl ReadXdr for ScSpecFunctionV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -7347,7 +7289,7 @@ impl ReadXdr for ScSpecFunctionV0 {
 }
 
 impl WriteXdr for ScSpecFunctionV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.doc.write_xdr(w)?;
@@ -7469,7 +7411,7 @@ impl From<ScSpecEntryKind> for i32 {
 }
 
 impl ReadXdr for ScSpecEntryKind {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -7480,7 +7422,7 @@ impl ReadXdr for ScSpecEntryKind {
 }
 
 impl WriteXdr for ScSpecEntryKind {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -7593,7 +7535,7 @@ impl Variants<ScSpecEntryKind> for ScSpecEntry {
 impl Union<ScSpecEntryKind> for ScSpecEntry {}
 
 impl ReadXdr for ScSpecEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ScSpecEntryKind = <ScSpecEntryKind as ReadXdr>::read_xdr(r)?;
@@ -7615,7 +7557,7 @@ impl ReadXdr for ScSpecEntry {
 }
 
 impl WriteXdr for ScSpecEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -7873,7 +7815,7 @@ impl From<ScValType> for i32 {
 }
 
 impl ReadXdr for ScValType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -7884,7 +7826,7 @@ impl ReadXdr for ScValType {
 }
 
 impl WriteXdr for ScValType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -8025,7 +7967,7 @@ impl From<ScErrorType> for i32 {
 }
 
 impl ReadXdr for ScErrorType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -8036,7 +7978,7 @@ impl ReadXdr for ScErrorType {
 }
 
 impl WriteXdr for ScErrorType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -8185,7 +8127,7 @@ impl From<ScErrorCode> for i32 {
 }
 
 impl ReadXdr for ScErrorCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -8196,7 +8138,7 @@ impl ReadXdr for ScErrorCode {
 }
 
 impl WriteXdr for ScErrorCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -8328,7 +8270,7 @@ impl Variants<ScErrorType> for ScError {
 impl Union<ScErrorType> for ScError {}
 
 impl ReadXdr for ScError {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ScErrorType = <ScErrorType as ReadXdr>::read_xdr(r)?;
@@ -8353,7 +8295,7 @@ impl ReadXdr for ScError {
 }
 
 impl WriteXdr for ScError {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -8398,7 +8340,7 @@ pub struct UInt128Parts {
 }
 
 impl ReadXdr for UInt128Parts {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -8410,7 +8352,7 @@ impl ReadXdr for UInt128Parts {
 }
 
 impl WriteXdr for UInt128Parts {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.hi.write_xdr(w)?;
@@ -8443,7 +8385,7 @@ pub struct Int128Parts {
 }
 
 impl ReadXdr for Int128Parts {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -8455,7 +8397,7 @@ impl ReadXdr for Int128Parts {
 }
 
 impl WriteXdr for Int128Parts {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.hi.write_xdr(w)?;
@@ -8492,7 +8434,7 @@ pub struct UInt256Parts {
 }
 
 impl ReadXdr for UInt256Parts {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -8506,7 +8448,7 @@ impl ReadXdr for UInt256Parts {
 }
 
 impl WriteXdr for UInt256Parts {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.hi_hi.write_xdr(w)?;
@@ -8545,7 +8487,7 @@ pub struct Int256Parts {
 }
 
 impl ReadXdr for Int256Parts {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -8559,7 +8501,7 @@ impl ReadXdr for Int256Parts {
 }
 
 impl WriteXdr for Int256Parts {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.hi_hi.write_xdr(w)?;
@@ -8660,7 +8602,7 @@ impl From<ContractExecutableType> for i32 {
 }
 
 impl ReadXdr for ContractExecutableType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -8671,7 +8613,7 @@ impl ReadXdr for ContractExecutableType {
 }
 
 impl WriteXdr for ContractExecutableType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -8760,7 +8702,7 @@ impl Variants<ContractExecutableType> for ContractExecutable {
 impl Union<ContractExecutableType> for ContractExecutable {}
 
 impl ReadXdr for ContractExecutable {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ContractExecutableType = <ContractExecutableType as ReadXdr>::read_xdr(r)?;
@@ -8777,7 +8719,7 @@ impl ReadXdr for ContractExecutable {
 }
 
 impl WriteXdr for ContractExecutable {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -8877,7 +8819,7 @@ impl From<ScAddressType> for i32 {
 }
 
 impl ReadXdr for ScAddressType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -8888,7 +8830,7 @@ impl ReadXdr for ScAddressType {
 }
 
 impl WriteXdr for ScAddressType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -8972,7 +8914,7 @@ impl Variants<ScAddressType> for ScAddress {
 impl Union<ScAddressType> for ScAddress {}
 
 impl ReadXdr for ScAddress {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ScAddressType = <ScAddressType as ReadXdr>::read_xdr(r)?;
@@ -8989,7 +8931,7 @@ impl ReadXdr for ScAddress {
 }
 
 impl WriteXdr for ScAddress {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -9051,7 +8993,7 @@ impl AsRef<VecM<ScVal>> for ScVec {
 }
 
 impl ReadXdr for ScVec {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = VecM::<ScVal>::read_xdr(r)?;
@@ -9062,7 +9004,7 @@ impl ReadXdr for ScVec {
 }
 
 impl WriteXdr for ScVec {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -9157,7 +9099,7 @@ impl AsRef<VecM<ScMapEntry>> for ScMap {
 }
 
 impl ReadXdr for ScMap {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = VecM::<ScMapEntry>::read_xdr(r)?;
@@ -9168,7 +9110,7 @@ impl ReadXdr for ScMap {
 }
 
 impl WriteXdr for ScMap {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -9263,7 +9205,7 @@ impl AsRef<BytesM> for ScBytes {
 }
 
 impl ReadXdr for ScBytes {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = BytesM::read_xdr(r)?;
@@ -9274,7 +9216,7 @@ impl ReadXdr for ScBytes {
 }
 
 impl WriteXdr for ScBytes {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -9369,7 +9311,7 @@ impl AsRef<StringM> for ScString {
 }
 
 impl ReadXdr for ScString {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = StringM::read_xdr(r)?;
@@ -9380,7 +9322,7 @@ impl ReadXdr for ScString {
 }
 
 impl WriteXdr for ScString {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -9475,7 +9417,7 @@ impl AsRef<StringM<32>> for ScSymbol {
 }
 
 impl ReadXdr for ScSymbol {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = StringM::<32>::read_xdr(r)?;
@@ -9486,7 +9428,7 @@ impl ReadXdr for ScSymbol {
 }
 
 impl WriteXdr for ScSymbol {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -9562,7 +9504,7 @@ pub struct ScNonceKey {
 }
 
 impl ReadXdr for ScNonceKey {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -9573,7 +9515,7 @@ impl ReadXdr for ScNonceKey {
 }
 
 impl WriteXdr for ScNonceKey {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.nonce.write_xdr(w)?;
@@ -9605,7 +9547,7 @@ pub struct ScContractInstance {
 }
 
 impl ReadXdr for ScContractInstance {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -9617,7 +9559,7 @@ impl ReadXdr for ScContractInstance {
 }
 
 impl WriteXdr for ScContractInstance {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.executable.write_xdr(w)?;
@@ -9864,7 +9806,7 @@ impl Variants<ScValType> for ScVal {
 impl Union<ScValType> for ScVal {}
 
 impl ReadXdr for ScVal {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ScValType = <ScValType as ReadXdr>::read_xdr(r)?;
@@ -9903,7 +9845,7 @@ impl ReadXdr for ScVal {
 }
 
 impl WriteXdr for ScVal {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -9961,7 +9903,7 @@ pub struct ScMapEntry {
 }
 
 impl ReadXdr for ScMapEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -9973,7 +9915,7 @@ impl ReadXdr for ScMapEntry {
 }
 
 impl WriteXdr for ScMapEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.key.write_xdr(w)?;
@@ -10060,7 +10002,7 @@ impl Variants<i32> for StoredTransactionSet {
 impl Union<i32> for StoredTransactionSet {}
 
 impl ReadXdr for StoredTransactionSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -10077,7 +10019,7 @@ impl ReadXdr for StoredTransactionSet {
 }
 
 impl WriteXdr for StoredTransactionSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -10117,7 +10059,7 @@ pub struct StoredDebugTransactionSet {
 }
 
 impl ReadXdr for StoredDebugTransactionSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -10130,7 +10072,7 @@ impl ReadXdr for StoredDebugTransactionSet {
 }
 
 impl WriteXdr for StoredDebugTransactionSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.tx_set.write_xdr(w)?;
@@ -10167,7 +10109,7 @@ pub struct PersistedScpStateV0 {
 }
 
 impl ReadXdr for PersistedScpStateV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -10180,7 +10122,7 @@ impl ReadXdr for PersistedScpStateV0 {
 }
 
 impl WriteXdr for PersistedScpStateV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.scp_envelopes.write_xdr(w)?;
@@ -10216,7 +10158,7 @@ pub struct PersistedScpStateV1 {
 }
 
 impl ReadXdr for PersistedScpStateV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -10228,7 +10170,7 @@ impl ReadXdr for PersistedScpStateV1 {
 }
 
 impl WriteXdr for PersistedScpStateV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.scp_envelopes.write_xdr(w)?;
@@ -10315,7 +10257,7 @@ impl Variants<i32> for PersistedScpState {
 impl Union<i32> for PersistedScpState {}
 
 impl ReadXdr for PersistedScpState {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -10332,7 +10274,7 @@ impl ReadXdr for PersistedScpState {
 }
 
 impl WriteXdr for PersistedScpState {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -10443,7 +10385,7 @@ impl AsRef<[u8; 4]> for Thresholds {
 }
 
 impl ReadXdr for Thresholds {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = <[u8; 4]>::read_xdr(r)?;
@@ -10454,7 +10396,7 @@ impl ReadXdr for Thresholds {
 }
 
 impl WriteXdr for Thresholds {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -10537,7 +10479,7 @@ impl AsRef<StringM<32>> for String32 {
 }
 
 impl ReadXdr for String32 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = StringM::<32>::read_xdr(r)?;
@@ -10548,7 +10490,7 @@ impl ReadXdr for String32 {
 }
 
 impl WriteXdr for String32 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -10643,7 +10585,7 @@ impl AsRef<StringM<64>> for String64 {
 }
 
 impl ReadXdr for String64 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = StringM::<64>::read_xdr(r)?;
@@ -10654,7 +10596,7 @@ impl ReadXdr for String64 {
 }
 
 impl WriteXdr for String64 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -10748,7 +10690,7 @@ impl AsRef<i64> for SequenceNumber {
 }
 
 impl ReadXdr for SequenceNumber {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = i64::read_xdr(r)?;
@@ -10759,7 +10701,7 @@ impl ReadXdr for SequenceNumber {
 }
 
 impl WriteXdr for SequenceNumber {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -10805,7 +10747,7 @@ impl AsRef<BytesM<64>> for DataValue {
 }
 
 impl ReadXdr for DataValue {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = BytesM::<64>::read_xdr(r)?;
@@ -10816,7 +10758,7 @@ impl ReadXdr for DataValue {
 }
 
 impl WriteXdr for DataValue {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -10910,7 +10852,7 @@ impl AsRef<Hash> for PoolId {
 }
 
 impl ReadXdr for PoolId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = Hash::read_xdr(r)?;
@@ -10921,7 +10863,7 @@ impl ReadXdr for PoolId {
 }
 
 impl WriteXdr for PoolId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -10974,7 +10916,7 @@ impl AsRef<[u8; 4]> for AssetCode4 {
 }
 
 impl ReadXdr for AssetCode4 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = <[u8; 4]>::read_xdr(r)?;
@@ -10985,7 +10927,7 @@ impl ReadXdr for AssetCode4 {
 }
 
 impl WriteXdr for AssetCode4 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -11075,7 +11017,7 @@ impl AsRef<[u8; 12]> for AssetCode12 {
 }
 
 impl ReadXdr for AssetCode12 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = <[u8; 12]>::read_xdr(r)?;
@@ -11086,7 +11028,7 @@ impl ReadXdr for AssetCode12 {
 }
 
 impl WriteXdr for AssetCode12 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -11229,7 +11171,7 @@ impl From<AssetType> for i32 {
 }
 
 impl ReadXdr for AssetType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -11240,7 +11182,7 @@ impl ReadXdr for AssetType {
 }
 
 impl WriteXdr for AssetType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -11327,7 +11269,7 @@ impl Variants<AssetType> for AssetCode {
 impl Union<AssetType> for AssetCode {}
 
 impl ReadXdr for AssetCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: AssetType = <AssetType as ReadXdr>::read_xdr(r)?;
@@ -11344,7 +11286,7 @@ impl ReadXdr for AssetCode {
 }
 
 impl WriteXdr for AssetCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -11382,7 +11324,7 @@ pub struct AlphaNum4 {
 }
 
 impl ReadXdr for AlphaNum4 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -11394,7 +11336,7 @@ impl ReadXdr for AlphaNum4 {
 }
 
 impl WriteXdr for AlphaNum4 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.asset_code.write_xdr(w)?;
@@ -11428,7 +11370,7 @@ pub struct AlphaNum12 {
 }
 
 impl ReadXdr for AlphaNum12 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -11440,7 +11382,7 @@ impl ReadXdr for AlphaNum12 {
 }
 
 impl WriteXdr for AlphaNum12 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.asset_code.write_xdr(w)?;
@@ -11540,7 +11482,7 @@ impl Variants<AssetType> for Asset {
 impl Union<AssetType> for Asset {}
 
 impl ReadXdr for Asset {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: AssetType = <AssetType as ReadXdr>::read_xdr(r)?;
@@ -11558,7 +11500,7 @@ impl ReadXdr for Asset {
 }
 
 impl WriteXdr for Asset {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -11597,7 +11539,7 @@ pub struct Price {
 }
 
 impl ReadXdr for Price {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -11609,7 +11551,7 @@ impl ReadXdr for Price {
 }
 
 impl WriteXdr for Price {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.n.write_xdr(w)?;
@@ -11643,7 +11585,7 @@ pub struct Liabilities {
 }
 
 impl ReadXdr for Liabilities {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -11655,7 +11597,7 @@ impl ReadXdr for Liabilities {
 }
 
 impl WriteXdr for Liabilities {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.buying.write_xdr(w)?;
@@ -11764,7 +11706,7 @@ impl From<ThresholdIndexes> for i32 {
 }
 
 impl ReadXdr for ThresholdIndexes {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -11775,7 +11717,7 @@ impl ReadXdr for ThresholdIndexes {
 }
 
 impl WriteXdr for ThresholdIndexes {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -11924,7 +11866,7 @@ impl From<LedgerEntryType> for i32 {
 }
 
 impl ReadXdr for LedgerEntryType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -11935,7 +11877,7 @@ impl ReadXdr for LedgerEntryType {
 }
 
 impl WriteXdr for LedgerEntryType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -11968,7 +11910,7 @@ pub struct Signer {
 }
 
 impl ReadXdr for Signer {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -11980,7 +11922,7 @@ impl ReadXdr for Signer {
 }
 
 impl WriteXdr for Signer {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.key.write_xdr(w)?;
@@ -12104,7 +12046,7 @@ impl From<AccountFlags> for i32 {
 }
 
 impl ReadXdr for AccountFlags {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -12115,7 +12057,7 @@ impl ReadXdr for AccountFlags {
 }
 
 impl WriteXdr for AccountFlags {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -12187,7 +12129,7 @@ impl AsRef<Option<AccountId>> for SponsorshipDescriptor {
 }
 
 impl ReadXdr for SponsorshipDescriptor {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = Option::<AccountId>::read_xdr(r)?;
@@ -12198,7 +12140,7 @@ impl ReadXdr for SponsorshipDescriptor {
 }
 
 impl WriteXdr for SponsorshipDescriptor {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -12236,7 +12178,7 @@ pub struct AccountEntryExtensionV3 {
 }
 
 impl ReadXdr for AccountEntryExtensionV3 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -12249,7 +12191,7 @@ impl ReadXdr for AccountEntryExtensionV3 {
 }
 
 impl WriteXdr for AccountEntryExtensionV3 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -12337,7 +12279,7 @@ impl Variants<i32> for AccountEntryExtensionV2Ext {
 impl Union<i32> for AccountEntryExtensionV2Ext {}
 
 impl ReadXdr for AccountEntryExtensionV2Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -12354,7 +12296,7 @@ impl ReadXdr for AccountEntryExtensionV2Ext {
 }
 
 impl WriteXdr for AccountEntryExtensionV2Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -12404,7 +12346,7 @@ pub struct AccountEntryExtensionV2 {
 }
 
 impl ReadXdr for AccountEntryExtensionV2 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -12418,7 +12360,7 @@ impl ReadXdr for AccountEntryExtensionV2 {
 }
 
 impl WriteXdr for AccountEntryExtensionV2 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.num_sponsored.write_xdr(w)?;
@@ -12507,7 +12449,7 @@ impl Variants<i32> for AccountEntryExtensionV1Ext {
 impl Union<i32> for AccountEntryExtensionV1Ext {}
 
 impl ReadXdr for AccountEntryExtensionV1Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -12524,7 +12466,7 @@ impl ReadXdr for AccountEntryExtensionV1Ext {
 }
 
 impl WriteXdr for AccountEntryExtensionV1Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -12570,7 +12512,7 @@ pub struct AccountEntryExtensionV1 {
 }
 
 impl ReadXdr for AccountEntryExtensionV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -12582,7 +12524,7 @@ impl ReadXdr for AccountEntryExtensionV1 {
 }
 
 impl WriteXdr for AccountEntryExtensionV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.liabilities.write_xdr(w)?;
@@ -12669,7 +12611,7 @@ impl Variants<i32> for AccountEntryExt {
 impl Union<i32> for AccountEntryExt {}
 
 impl ReadXdr for AccountEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -12686,7 +12628,7 @@ impl ReadXdr for AccountEntryExt {
 }
 
 impl WriteXdr for AccountEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -12755,7 +12697,7 @@ pub struct AccountEntry {
 }
 
 impl ReadXdr for AccountEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -12775,7 +12717,7 @@ impl ReadXdr for AccountEntry {
 }
 
 impl WriteXdr for AccountEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.account_id.write_xdr(w)?;
@@ -12896,7 +12838,7 @@ impl From<TrustLineFlags> for i32 {
 }
 
 impl ReadXdr for TrustLineFlags {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -12907,7 +12849,7 @@ impl ReadXdr for TrustLineFlags {
 }
 
 impl WriteXdr for TrustLineFlags {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -13022,7 +12964,7 @@ impl From<LiquidityPoolType> for i32 {
 }
 
 impl ReadXdr for LiquidityPoolType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -13033,7 +12975,7 @@ impl ReadXdr for LiquidityPoolType {
 }
 
 impl WriteXdr for LiquidityPoolType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -13140,7 +13082,7 @@ impl Variants<AssetType> for TrustLineAsset {
 impl Union<AssetType> for TrustLineAsset {}
 
 impl ReadXdr for TrustLineAsset {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: AssetType = <AssetType as ReadXdr>::read_xdr(r)?;
@@ -13159,7 +13101,7 @@ impl ReadXdr for TrustLineAsset {
 }
 
 impl WriteXdr for TrustLineAsset {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -13247,7 +13189,7 @@ impl Variants<i32> for TrustLineEntryExtensionV2Ext {
 impl Union<i32> for TrustLineEntryExtensionV2Ext {}
 
 impl ReadXdr for TrustLineEntryExtensionV2Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -13263,7 +13205,7 @@ impl ReadXdr for TrustLineEntryExtensionV2Ext {
 }
 
 impl WriteXdr for TrustLineEntryExtensionV2Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -13306,7 +13248,7 @@ pub struct TrustLineEntryExtensionV2 {
 }
 
 impl ReadXdr for TrustLineEntryExtensionV2 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -13318,7 +13260,7 @@ impl ReadXdr for TrustLineEntryExtensionV2 {
 }
 
 impl WriteXdr for TrustLineEntryExtensionV2 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.liquidity_pool_use_count.write_xdr(w)?;
@@ -13405,7 +13347,7 @@ impl Variants<i32> for TrustLineEntryV1Ext {
 impl Union<i32> for TrustLineEntryV1Ext {}
 
 impl ReadXdr for TrustLineEntryV1Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -13422,7 +13364,7 @@ impl ReadXdr for TrustLineEntryV1Ext {
 }
 
 impl WriteXdr for TrustLineEntryV1Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -13468,7 +13410,7 @@ pub struct TrustLineEntryV1 {
 }
 
 impl ReadXdr for TrustLineEntryV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -13480,7 +13422,7 @@ impl ReadXdr for TrustLineEntryV1 {
 }
 
 impl WriteXdr for TrustLineEntryV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.liabilities.write_xdr(w)?;
@@ -13579,7 +13521,7 @@ impl Variants<i32> for TrustLineEntryExt {
 impl Union<i32> for TrustLineEntryExt {}
 
 impl ReadXdr for TrustLineEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -13596,7 +13538,7 @@ impl ReadXdr for TrustLineEntryExt {
 }
 
 impl WriteXdr for TrustLineEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -13665,7 +13607,7 @@ pub struct TrustLineEntry {
 }
 
 impl ReadXdr for TrustLineEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -13681,7 +13623,7 @@ impl ReadXdr for TrustLineEntry {
 }
 
 impl WriteXdr for TrustLineEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.account_id.write_xdr(w)?;
@@ -13779,7 +13721,7 @@ impl From<OfferEntryFlags> for i32 {
 }
 
 impl ReadXdr for OfferEntryFlags {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -13790,7 +13732,7 @@ impl ReadXdr for OfferEntryFlags {
 }
 
 impl WriteXdr for OfferEntryFlags {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -13879,7 +13821,7 @@ impl Variants<i32> for OfferEntryExt {
 impl Union<i32> for OfferEntryExt {}
 
 impl ReadXdr for OfferEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -13895,7 +13837,7 @@ impl ReadXdr for OfferEntryExt {
 }
 
 impl WriteXdr for OfferEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -13957,7 +13899,7 @@ pub struct OfferEntry {
 }
 
 impl ReadXdr for OfferEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -13975,7 +13917,7 @@ impl ReadXdr for OfferEntry {
 }
 
 impl WriteXdr for OfferEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.seller_id.write_xdr(w)?;
@@ -14063,7 +14005,7 @@ impl Variants<i32> for DataEntryExt {
 impl Union<i32> for DataEntryExt {}
 
 impl ReadXdr for DataEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -14079,7 +14021,7 @@ impl ReadXdr for DataEntryExt {
 }
 
 impl WriteXdr for DataEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -14127,7 +14069,7 @@ pub struct DataEntry {
 }
 
 impl ReadXdr for DataEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -14141,7 +14083,7 @@ impl ReadXdr for DataEntry {
 }
 
 impl WriteXdr for DataEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.account_id.write_xdr(w)?;
@@ -14269,7 +14211,7 @@ impl From<ClaimPredicateType> for i32 {
 }
 
 impl ReadXdr for ClaimPredicateType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -14280,7 +14222,7 @@ impl ReadXdr for ClaimPredicateType {
 }
 
 impl WriteXdr for ClaimPredicateType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -14401,7 +14343,7 @@ impl Variants<ClaimPredicateType> for ClaimPredicate {
 impl Union<ClaimPredicateType> for ClaimPredicate {}
 
 impl ReadXdr for ClaimPredicate {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ClaimPredicateType = <ClaimPredicateType as ReadXdr>::read_xdr(r)?;
@@ -14426,7 +14368,7 @@ impl ReadXdr for ClaimPredicate {
 }
 
 impl WriteXdr for ClaimPredicate {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -14526,7 +14468,7 @@ impl From<ClaimantType> for i32 {
 }
 
 impl ReadXdr for ClaimantType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -14537,7 +14479,7 @@ impl ReadXdr for ClaimantType {
 }
 
 impl WriteXdr for ClaimantType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -14570,7 +14512,7 @@ pub struct ClaimantV0 {
 }
 
 impl ReadXdr for ClaimantV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -14582,7 +14524,7 @@ impl ReadXdr for ClaimantV0 {
 }
 
 impl WriteXdr for ClaimantV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.destination.write_xdr(w)?;
@@ -14668,7 +14610,7 @@ impl Variants<ClaimantType> for Claimant {
 impl Union<ClaimantType> for Claimant {}
 
 impl ReadXdr for Claimant {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ClaimantType = <ClaimantType as ReadXdr>::read_xdr(r)?;
@@ -14684,7 +14626,7 @@ impl ReadXdr for Claimant {
 }
 
 impl WriteXdr for Claimant {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -14780,7 +14722,7 @@ impl From<ClaimableBalanceIdType> for i32 {
 }
 
 impl ReadXdr for ClaimableBalanceIdType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -14791,7 +14733,7 @@ impl ReadXdr for ClaimableBalanceIdType {
 }
 
 impl WriteXdr for ClaimableBalanceIdType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -14871,7 +14813,7 @@ impl Variants<ClaimableBalanceIdType> for ClaimableBalanceId {
 impl Union<ClaimableBalanceIdType> for ClaimableBalanceId {}
 
 impl ReadXdr for ClaimableBalanceId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ClaimableBalanceIdType = <ClaimableBalanceIdType as ReadXdr>::read_xdr(r)?;
@@ -14889,7 +14831,7 @@ impl ReadXdr for ClaimableBalanceId {
 }
 
 impl WriteXdr for ClaimableBalanceId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -14987,7 +14929,7 @@ impl From<ClaimableBalanceFlags> for i32 {
 }
 
 impl ReadXdr for ClaimableBalanceFlags {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -14998,7 +14940,7 @@ impl ReadXdr for ClaimableBalanceFlags {
 }
 
 impl WriteXdr for ClaimableBalanceFlags {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -15087,7 +15029,7 @@ impl Variants<i32> for ClaimableBalanceEntryExtensionV1Ext {
 impl Union<i32> for ClaimableBalanceEntryExtensionV1Ext {}
 
 impl ReadXdr for ClaimableBalanceEntryExtensionV1Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -15103,7 +15045,7 @@ impl ReadXdr for ClaimableBalanceEntryExtensionV1Ext {
 }
 
 impl WriteXdr for ClaimableBalanceEntryExtensionV1Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -15146,7 +15088,7 @@ pub struct ClaimableBalanceEntryExtensionV1 {
 }
 
 impl ReadXdr for ClaimableBalanceEntryExtensionV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -15158,7 +15100,7 @@ impl ReadXdr for ClaimableBalanceEntryExtensionV1 {
 }
 
 impl WriteXdr for ClaimableBalanceEntryExtensionV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -15245,7 +15187,7 @@ impl Variants<i32> for ClaimableBalanceEntryExt {
 impl Union<i32> for ClaimableBalanceEntryExt {}
 
 impl ReadXdr for ClaimableBalanceEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -15262,7 +15204,7 @@ impl ReadXdr for ClaimableBalanceEntryExt {
 }
 
 impl WriteXdr for ClaimableBalanceEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -15322,7 +15264,7 @@ pub struct ClaimableBalanceEntry {
 }
 
 impl ReadXdr for ClaimableBalanceEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -15337,7 +15279,7 @@ impl ReadXdr for ClaimableBalanceEntry {
 }
 
 impl WriteXdr for ClaimableBalanceEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.balance_id.write_xdr(w)?;
@@ -15376,7 +15318,7 @@ pub struct LiquidityPoolConstantProductParameters {
 }
 
 impl ReadXdr for LiquidityPoolConstantProductParameters {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -15389,7 +15331,7 @@ impl ReadXdr for LiquidityPoolConstantProductParameters {
 }
 
 impl WriteXdr for LiquidityPoolConstantProductParameters {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.asset_a.write_xdr(w)?;
@@ -15432,7 +15374,7 @@ pub struct LiquidityPoolEntryConstantProduct {
 }
 
 impl ReadXdr for LiquidityPoolEntryConstantProduct {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -15447,7 +15389,7 @@ impl ReadXdr for LiquidityPoolEntryConstantProduct {
 }
 
 impl WriteXdr for LiquidityPoolEntryConstantProduct {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.params.write_xdr(w)?;
@@ -15543,7 +15485,7 @@ impl Variants<LiquidityPoolType> for LiquidityPoolEntryBody {
 impl Union<LiquidityPoolType> for LiquidityPoolEntryBody {}
 
 impl ReadXdr for LiquidityPoolEntryBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: LiquidityPoolType = <LiquidityPoolType as ReadXdr>::read_xdr(r)?;
@@ -15563,7 +15505,7 @@ impl ReadXdr for LiquidityPoolEntryBody {
 }
 
 impl WriteXdr for LiquidityPoolEntryBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -15615,7 +15557,7 @@ pub struct LiquidityPoolEntry {
 }
 
 impl ReadXdr for LiquidityPoolEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -15627,7 +15569,7 @@ impl ReadXdr for LiquidityPoolEntry {
 }
 
 impl WriteXdr for LiquidityPoolEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.liquidity_pool_id.write_xdr(w)?;
@@ -15725,7 +15667,7 @@ impl From<ContractDataDurability> for i32 {
 }
 
 impl ReadXdr for ContractDataDurability {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -15736,7 +15678,7 @@ impl ReadXdr for ContractDataDurability {
 }
 
 impl WriteXdr for ContractDataDurability {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -15775,7 +15717,7 @@ pub struct ContractDataEntry {
 }
 
 impl ReadXdr for ContractDataEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -15790,7 +15732,7 @@ impl ReadXdr for ContractDataEntry {
 }
 
 impl WriteXdr for ContractDataEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -15844,7 +15786,7 @@ pub struct ContractCodeCostInputs {
 }
 
 impl ReadXdr for ContractCodeCostInputs {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -15865,7 +15807,7 @@ impl ReadXdr for ContractCodeCostInputs {
 }
 
 impl WriteXdr for ContractCodeCostInputs {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -15908,7 +15850,7 @@ pub struct ContractCodeEntryV1 {
 }
 
 impl ReadXdr for ContractCodeEntryV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -15920,7 +15862,7 @@ impl ReadXdr for ContractCodeEntryV1 {
 }
 
 impl WriteXdr for ContractCodeEntryV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -16011,7 +15953,7 @@ impl Variants<i32> for ContractCodeEntryExt {
 impl Union<i32> for ContractCodeEntryExt {}
 
 impl ReadXdr for ContractCodeEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -16028,7 +15970,7 @@ impl ReadXdr for ContractCodeEntryExt {
 }
 
 impl WriteXdr for ContractCodeEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -16078,7 +16020,7 @@ pub struct ContractCodeEntry {
 }
 
 impl ReadXdr for ContractCodeEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -16091,7 +16033,7 @@ impl ReadXdr for ContractCodeEntry {
 }
 
 impl WriteXdr for ContractCodeEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -16126,7 +16068,7 @@ pub struct TtlEntry {
 }
 
 impl ReadXdr for TtlEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -16138,7 +16080,7 @@ impl ReadXdr for TtlEntry {
 }
 
 impl WriteXdr for TtlEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.key_hash.write_xdr(w)?;
@@ -16220,7 +16162,7 @@ impl Variants<i32> for LedgerEntryExtensionV1Ext {
 impl Union<i32> for LedgerEntryExtensionV1Ext {}
 
 impl ReadXdr for LedgerEntryExtensionV1Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -16236,7 +16178,7 @@ impl ReadXdr for LedgerEntryExtensionV1Ext {
 }
 
 impl WriteXdr for LedgerEntryExtensionV1Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -16279,7 +16221,7 @@ pub struct LedgerEntryExtensionV1 {
 }
 
 impl ReadXdr for LedgerEntryExtensionV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -16291,7 +16233,7 @@ impl ReadXdr for LedgerEntryExtensionV1 {
 }
 
 impl WriteXdr for LedgerEntryExtensionV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.sponsoring_id.write_xdr(w)?;
@@ -16440,7 +16382,7 @@ impl Variants<LedgerEntryType> for LedgerEntryData {
 impl Union<LedgerEntryType> for LedgerEntryData {}
 
 impl ReadXdr for LedgerEntryData {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: LedgerEntryType = <LedgerEntryType as ReadXdr>::read_xdr(r)?;
@@ -16475,7 +16417,7 @@ impl ReadXdr for LedgerEntryData {
 }
 
 impl WriteXdr for LedgerEntryData {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -16574,7 +16516,7 @@ impl Variants<i32> for LedgerEntryExt {
 impl Union<i32> for LedgerEntryExt {}
 
 impl ReadXdr for LedgerEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -16591,7 +16533,7 @@ impl ReadXdr for LedgerEntryExt {
 }
 
 impl WriteXdr for LedgerEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -16664,7 +16606,7 @@ pub struct LedgerEntry {
 }
 
 impl ReadXdr for LedgerEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -16677,7 +16619,7 @@ impl ReadXdr for LedgerEntry {
 }
 
 impl WriteXdr for LedgerEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.last_modified_ledger_seq.write_xdr(w)?;
@@ -16710,7 +16652,7 @@ pub struct LedgerKeyAccount {
 }
 
 impl ReadXdr for LedgerKeyAccount {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -16721,7 +16663,7 @@ impl ReadXdr for LedgerKeyAccount {
 }
 
 impl WriteXdr for LedgerKeyAccount {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.account_id.write_xdr(w)?;
@@ -16754,7 +16696,7 @@ pub struct LedgerKeyTrustLine {
 }
 
 impl ReadXdr for LedgerKeyTrustLine {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -16766,7 +16708,7 @@ impl ReadXdr for LedgerKeyTrustLine {
 }
 
 impl WriteXdr for LedgerKeyTrustLine {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.account_id.write_xdr(w)?;
@@ -16800,7 +16742,7 @@ pub struct LedgerKeyOffer {
 }
 
 impl ReadXdr for LedgerKeyOffer {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -16812,7 +16754,7 @@ impl ReadXdr for LedgerKeyOffer {
 }
 
 impl WriteXdr for LedgerKeyOffer {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.seller_id.write_xdr(w)?;
@@ -16846,7 +16788,7 @@ pub struct LedgerKeyData {
 }
 
 impl ReadXdr for LedgerKeyData {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -16858,7 +16800,7 @@ impl ReadXdr for LedgerKeyData {
 }
 
 impl WriteXdr for LedgerKeyData {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.account_id.write_xdr(w)?;
@@ -16890,7 +16832,7 @@ pub struct LedgerKeyClaimableBalance {
 }
 
 impl ReadXdr for LedgerKeyClaimableBalance {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -16901,7 +16843,7 @@ impl ReadXdr for LedgerKeyClaimableBalance {
 }
 
 impl WriteXdr for LedgerKeyClaimableBalance {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.balance_id.write_xdr(w)?;
@@ -16932,7 +16874,7 @@ pub struct LedgerKeyLiquidityPool {
 }
 
 impl ReadXdr for LedgerKeyLiquidityPool {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -16943,7 +16885,7 @@ impl ReadXdr for LedgerKeyLiquidityPool {
 }
 
 impl WriteXdr for LedgerKeyLiquidityPool {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.liquidity_pool_id.write_xdr(w)?;
@@ -16978,7 +16920,7 @@ pub struct LedgerKeyContractData {
 }
 
 impl ReadXdr for LedgerKeyContractData {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -16991,7 +16933,7 @@ impl ReadXdr for LedgerKeyContractData {
 }
 
 impl WriteXdr for LedgerKeyContractData {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.contract.write_xdr(w)?;
@@ -17024,7 +16966,7 @@ pub struct LedgerKeyContractCode {
 }
 
 impl ReadXdr for LedgerKeyContractCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -17035,7 +16977,7 @@ impl ReadXdr for LedgerKeyContractCode {
 }
 
 impl WriteXdr for LedgerKeyContractCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.hash.write_xdr(w)?;
@@ -17066,7 +17008,7 @@ pub struct LedgerKeyConfigSetting {
 }
 
 impl ReadXdr for LedgerKeyConfigSetting {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -17077,7 +17019,7 @@ impl ReadXdr for LedgerKeyConfigSetting {
 }
 
 impl WriteXdr for LedgerKeyConfigSetting {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.config_setting_id.write_xdr(w)?;
@@ -17109,7 +17051,7 @@ pub struct LedgerKeyTtl {
 }
 
 impl ReadXdr for LedgerKeyTtl {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -17120,7 +17062,7 @@ impl ReadXdr for LedgerKeyTtl {
 }
 
 impl WriteXdr for LedgerKeyTtl {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.key_hash.write_xdr(w)?;
@@ -17309,7 +17251,7 @@ impl Variants<LedgerEntryType> for LedgerKey {
 impl Union<LedgerEntryType> for LedgerKey {}
 
 impl ReadXdr for LedgerKey {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: LedgerEntryType = <LedgerEntryType as ReadXdr>::read_xdr(r)?;
@@ -17344,7 +17286,7 @@ impl ReadXdr for LedgerKey {
 }
 
 impl WriteXdr for LedgerKey {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -17506,7 +17448,7 @@ impl From<EnvelopeType> for i32 {
 }
 
 impl ReadXdr for EnvelopeType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -17517,7 +17459,7 @@ impl ReadXdr for EnvelopeType {
 }
 
 impl WriteXdr for EnvelopeType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -17620,7 +17562,7 @@ impl From<BucketListType> for i32 {
 }
 
 impl ReadXdr for BucketListType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -17631,7 +17573,7 @@ impl ReadXdr for BucketListType {
 }
 
 impl WriteXdr for BucketListType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -17742,7 +17684,7 @@ impl From<BucketEntryType> for i32 {
 }
 
 impl ReadXdr for BucketEntryType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -17753,7 +17695,7 @@ impl ReadXdr for BucketEntryType {
 }
 
 impl WriteXdr for BucketEntryType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -17863,7 +17805,7 @@ impl From<HotArchiveBucketEntryType> for i32 {
 }
 
 impl ReadXdr for HotArchiveBucketEntryType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -17874,7 +17816,7 @@ impl ReadXdr for HotArchiveBucketEntryType {
 }
 
 impl WriteXdr for HotArchiveBucketEntryType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -17993,7 +17935,7 @@ impl From<ColdArchiveBucketEntryType> for i32 {
 }
 
 impl ReadXdr for ColdArchiveBucketEntryType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -18004,7 +17946,7 @@ impl ReadXdr for ColdArchiveBucketEntryType {
 }
 
 impl WriteXdr for ColdArchiveBucketEntryType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -18090,7 +18032,7 @@ impl Variants<i32> for BucketMetadataExt {
 impl Union<i32> for BucketMetadataExt {}
 
 impl ReadXdr for BucketMetadataExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -18107,7 +18049,7 @@ impl ReadXdr for BucketMetadataExt {
 }
 
 impl WriteXdr for BucketMetadataExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -18155,7 +18097,7 @@ pub struct BucketMetadata {
 }
 
 impl ReadXdr for BucketMetadata {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -18167,7 +18109,7 @@ impl ReadXdr for BucketMetadata {
 }
 
 impl WriteXdr for BucketMetadata {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ledger_version.write_xdr(w)?;
@@ -18270,7 +18212,7 @@ impl Variants<BucketEntryType> for BucketEntry {
 impl Union<BucketEntryType> for BucketEntry {}
 
 impl ReadXdr for BucketEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: BucketEntryType = <BucketEntryType as ReadXdr>::read_xdr(r)?;
@@ -18289,7 +18231,7 @@ impl ReadXdr for BucketEntry {
 }
 
 impl WriteXdr for BucketEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -18397,7 +18339,7 @@ impl Variants<HotArchiveBucketEntryType> for HotArchiveBucketEntry {
 impl Union<HotArchiveBucketEntryType> for HotArchiveBucketEntry {}
 
 impl ReadXdr for HotArchiveBucketEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: HotArchiveBucketEntryType =
@@ -18419,7 +18361,7 @@ impl ReadXdr for HotArchiveBucketEntry {
 }
 
 impl WriteXdr for HotArchiveBucketEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -18459,7 +18401,7 @@ pub struct ColdArchiveArchivedLeaf {
 }
 
 impl ReadXdr for ColdArchiveArchivedLeaf {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -18471,7 +18413,7 @@ impl ReadXdr for ColdArchiveArchivedLeaf {
 }
 
 impl WriteXdr for ColdArchiveArchivedLeaf {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.index.write_xdr(w)?;
@@ -18505,7 +18447,7 @@ pub struct ColdArchiveDeletedLeaf {
 }
 
 impl ReadXdr for ColdArchiveDeletedLeaf {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -18517,7 +18459,7 @@ impl ReadXdr for ColdArchiveDeletedLeaf {
 }
 
 impl WriteXdr for ColdArchiveDeletedLeaf {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.index.write_xdr(w)?;
@@ -18551,7 +18493,7 @@ pub struct ColdArchiveBoundaryLeaf {
 }
 
 impl ReadXdr for ColdArchiveBoundaryLeaf {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -18563,7 +18505,7 @@ impl ReadXdr for ColdArchiveBoundaryLeaf {
 }
 
 impl WriteXdr for ColdArchiveBoundaryLeaf {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.index.write_xdr(w)?;
@@ -18599,7 +18541,7 @@ pub struct ColdArchiveHashEntry {
 }
 
 impl ReadXdr for ColdArchiveHashEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -18612,7 +18554,7 @@ impl ReadXdr for ColdArchiveHashEntry {
 }
 
 impl WriteXdr for ColdArchiveHashEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.index.write_xdr(w)?;
@@ -18727,7 +18669,7 @@ impl Variants<ColdArchiveBucketEntryType> for ColdArchiveBucketEntry {
 impl Union<ColdArchiveBucketEntryType> for ColdArchiveBucketEntry {}
 
 impl ReadXdr for ColdArchiveBucketEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ColdArchiveBucketEntryType =
@@ -18756,7 +18698,7 @@ impl ReadXdr for ColdArchiveBucketEntry {
 }
 
 impl WriteXdr for ColdArchiveBucketEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -18813,7 +18755,7 @@ impl AsRef<BytesM<128>> for UpgradeType {
 }
 
 impl ReadXdr for UpgradeType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = BytesM::<128>::read_xdr(r)?;
@@ -18824,7 +18766,7 @@ impl ReadXdr for UpgradeType {
 }
 
 impl WriteXdr for UpgradeType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -18965,7 +18907,7 @@ impl From<StellarValueType> for i32 {
 }
 
 impl ReadXdr for StellarValueType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -18976,7 +18918,7 @@ impl ReadXdr for StellarValueType {
 }
 
 impl WriteXdr for StellarValueType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -19009,7 +18951,7 @@ pub struct LedgerCloseValueSignature {
 }
 
 impl ReadXdr for LedgerCloseValueSignature {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -19021,7 +18963,7 @@ impl ReadXdr for LedgerCloseValueSignature {
 }
 
 impl WriteXdr for LedgerCloseValueSignature {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.node_id.write_xdr(w)?;
@@ -19108,7 +19050,7 @@ impl Variants<StellarValueType> for StellarValueExt {
 impl Union<StellarValueType> for StellarValueExt {}
 
 impl ReadXdr for StellarValueExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: StellarValueType = <StellarValueType as ReadXdr>::read_xdr(r)?;
@@ -19125,7 +19067,7 @@ impl ReadXdr for StellarValueExt {
 }
 
 impl WriteXdr for StellarValueExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -19182,7 +19124,7 @@ pub struct StellarValue {
 }
 
 impl ReadXdr for StellarValue {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -19196,7 +19138,7 @@ impl ReadXdr for StellarValue {
 }
 
 impl WriteXdr for StellarValue {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.tx_set_hash.write_xdr(w)?;
@@ -19310,7 +19252,7 @@ impl From<LedgerHeaderFlags> for i32 {
 }
 
 impl ReadXdr for LedgerHeaderFlags {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -19321,7 +19263,7 @@ impl ReadXdr for LedgerHeaderFlags {
 }
 
 impl WriteXdr for LedgerHeaderFlags {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -19402,7 +19344,7 @@ impl Variants<i32> for LedgerHeaderExtensionV1Ext {
 impl Union<i32> for LedgerHeaderExtensionV1Ext {}
 
 impl ReadXdr for LedgerHeaderExtensionV1Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -19418,7 +19360,7 @@ impl ReadXdr for LedgerHeaderExtensionV1Ext {
 }
 
 impl WriteXdr for LedgerHeaderExtensionV1Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -19461,7 +19403,7 @@ pub struct LedgerHeaderExtensionV1 {
 }
 
 impl ReadXdr for LedgerHeaderExtensionV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -19473,7 +19415,7 @@ impl ReadXdr for LedgerHeaderExtensionV1 {
 }
 
 impl WriteXdr for LedgerHeaderExtensionV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.flags.write_xdr(w)?;
@@ -19560,7 +19502,7 @@ impl Variants<i32> for LedgerHeaderExt {
 impl Union<i32> for LedgerHeaderExt {}
 
 impl ReadXdr for LedgerHeaderExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -19577,7 +19519,7 @@ impl ReadXdr for LedgerHeaderExt {
 }
 
 impl WriteXdr for LedgerHeaderExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -19662,7 +19604,7 @@ pub struct LedgerHeader {
 }
 
 impl ReadXdr for LedgerHeader {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -19687,7 +19629,7 @@ impl ReadXdr for LedgerHeader {
 }
 
 impl WriteXdr for LedgerHeader {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ledger_version.write_xdr(w)?;
@@ -19832,7 +19774,7 @@ impl From<LedgerUpgradeType> for i32 {
 }
 
 impl ReadXdr for LedgerUpgradeType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -19843,7 +19785,7 @@ impl ReadXdr for LedgerUpgradeType {
 }
 
 impl WriteXdr for LedgerUpgradeType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -19875,7 +19817,7 @@ pub struct ConfigUpgradeSetKey {
 }
 
 impl ReadXdr for ConfigUpgradeSetKey {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -19887,7 +19829,7 @@ impl ReadXdr for ConfigUpgradeSetKey {
 }
 
 impl WriteXdr for ConfigUpgradeSetKey {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.contract_id.write_xdr(w)?;
@@ -20018,7 +19960,7 @@ impl Variants<LedgerUpgradeType> for LedgerUpgrade {
 impl Union<LedgerUpgradeType> for LedgerUpgrade {}
 
 impl ReadXdr for LedgerUpgrade {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: LedgerUpgradeType = <LedgerUpgradeType as ReadXdr>::read_xdr(r)?;
@@ -20042,7 +19984,7 @@ impl ReadXdr for LedgerUpgrade {
 }
 
 impl WriteXdr for LedgerUpgrade {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -20082,7 +20024,7 @@ pub struct ConfigUpgradeSet {
 }
 
 impl ReadXdr for ConfigUpgradeSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -20093,7 +20035,7 @@ impl ReadXdr for ConfigUpgradeSet {
 }
 
 impl WriteXdr for ConfigUpgradeSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.updated_entry.write_xdr(w)?;
@@ -20187,7 +20129,7 @@ impl From<TxSetComponentType> for i32 {
 }
 
 impl ReadXdr for TxSetComponentType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -20198,269 +20140,11 @@ impl ReadXdr for TxSetComponentType {
 }
 
 impl WriteXdr for TxSetComponentType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
             i.write_xdr(w)
-        })
-    }
-}
-
-/// TxExecutionThread is an XDR Typedef defines as:
-///
-/// ```text
-/// typedef TransactionEnvelope TxExecutionThread<>;
-/// ```
-///
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
-#[derive(Default)]
-#[cfg_attr(
-    all(feature = "serde", feature = "alloc"),
-    derive(serde::Serialize, serde::Deserialize),
-    serde(rename_all = "snake_case")
-)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[derive(Debug)]
-pub struct TxExecutionThread(pub VecM<TransactionEnvelope>);
-
-impl From<TxExecutionThread> for VecM<TransactionEnvelope> {
-    #[must_use]
-    fn from(x: TxExecutionThread) -> Self {
-        x.0
-    }
-}
-
-impl From<VecM<TransactionEnvelope>> for TxExecutionThread {
-    #[must_use]
-    fn from(x: VecM<TransactionEnvelope>) -> Self {
-        TxExecutionThread(x)
-    }
-}
-
-impl AsRef<VecM<TransactionEnvelope>> for TxExecutionThread {
-    #[must_use]
-    fn as_ref(&self) -> &VecM<TransactionEnvelope> {
-        &self.0
-    }
-}
-
-impl ReadXdr for TxExecutionThread {
-    #[cfg(feature = "std")]
-    fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
-        r.with_limited_depth(|r| {
-            let i = VecM::<TransactionEnvelope>::read_xdr(r)?;
-            let v = TxExecutionThread(i);
-            Ok(v)
-        })
-    }
-}
-
-impl WriteXdr for TxExecutionThread {
-    #[cfg(feature = "std")]
-    fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
-        w.with_limited_depth(|w| self.0.write_xdr(w))
-    }
-}
-
-impl Deref for TxExecutionThread {
-    type Target = VecM<TransactionEnvelope>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<TxExecutionThread> for Vec<TransactionEnvelope> {
-    #[must_use]
-    fn from(x: TxExecutionThread) -> Self {
-        x.0 .0
-    }
-}
-
-impl TryFrom<Vec<TransactionEnvelope>> for TxExecutionThread {
-    type Error = Error;
-    fn try_from(x: Vec<TransactionEnvelope>) -> Result<Self> {
-        Ok(TxExecutionThread(x.try_into()?))
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl TryFrom<&Vec<TransactionEnvelope>> for TxExecutionThread {
-    type Error = Error;
-    fn try_from(x: &Vec<TransactionEnvelope>) -> Result<Self> {
-        Ok(TxExecutionThread(x.try_into()?))
-    }
-}
-
-impl AsRef<Vec<TransactionEnvelope>> for TxExecutionThread {
-    #[must_use]
-    fn as_ref(&self) -> &Vec<TransactionEnvelope> {
-        &self.0 .0
-    }
-}
-
-impl AsRef<[TransactionEnvelope]> for TxExecutionThread {
-    #[cfg(feature = "alloc")]
-    #[must_use]
-    fn as_ref(&self) -> &[TransactionEnvelope] {
-        &self.0 .0
-    }
-    #[cfg(not(feature = "alloc"))]
-    #[must_use]
-    fn as_ref(&self) -> &[TransactionEnvelope] {
-        self.0 .0
-    }
-}
-
-/// ParallelTxExecutionStage is an XDR Typedef defines as:
-///
-/// ```text
-/// typedef TxExecutionThread ParallelTxExecutionStage<>;
-/// ```
-///
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
-#[derive(Default)]
-#[cfg_attr(
-    all(feature = "serde", feature = "alloc"),
-    derive(serde::Serialize, serde::Deserialize),
-    serde(rename_all = "snake_case")
-)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[derive(Debug)]
-pub struct ParallelTxExecutionStage(pub VecM<TxExecutionThread>);
-
-impl From<ParallelTxExecutionStage> for VecM<TxExecutionThread> {
-    #[must_use]
-    fn from(x: ParallelTxExecutionStage) -> Self {
-        x.0
-    }
-}
-
-impl From<VecM<TxExecutionThread>> for ParallelTxExecutionStage {
-    #[must_use]
-    fn from(x: VecM<TxExecutionThread>) -> Self {
-        ParallelTxExecutionStage(x)
-    }
-}
-
-impl AsRef<VecM<TxExecutionThread>> for ParallelTxExecutionStage {
-    #[must_use]
-    fn as_ref(&self) -> &VecM<TxExecutionThread> {
-        &self.0
-    }
-}
-
-impl ReadXdr for ParallelTxExecutionStage {
-    #[cfg(feature = "std")]
-    fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
-        r.with_limited_depth(|r| {
-            let i = VecM::<TxExecutionThread>::read_xdr(r)?;
-            let v = ParallelTxExecutionStage(i);
-            Ok(v)
-        })
-    }
-}
-
-impl WriteXdr for ParallelTxExecutionStage {
-    #[cfg(feature = "std")]
-    fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
-        w.with_limited_depth(|w| self.0.write_xdr(w))
-    }
-}
-
-impl Deref for ParallelTxExecutionStage {
-    type Target = VecM<TxExecutionThread>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<ParallelTxExecutionStage> for Vec<TxExecutionThread> {
-    #[must_use]
-    fn from(x: ParallelTxExecutionStage) -> Self {
-        x.0 .0
-    }
-}
-
-impl TryFrom<Vec<TxExecutionThread>> for ParallelTxExecutionStage {
-    type Error = Error;
-    fn try_from(x: Vec<TxExecutionThread>) -> Result<Self> {
-        Ok(ParallelTxExecutionStage(x.try_into()?))
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl TryFrom<&Vec<TxExecutionThread>> for ParallelTxExecutionStage {
-    type Error = Error;
-    fn try_from(x: &Vec<TxExecutionThread>) -> Result<Self> {
-        Ok(ParallelTxExecutionStage(x.try_into()?))
-    }
-}
-
-impl AsRef<Vec<TxExecutionThread>> for ParallelTxExecutionStage {
-    #[must_use]
-    fn as_ref(&self) -> &Vec<TxExecutionThread> {
-        &self.0 .0
-    }
-}
-
-impl AsRef<[TxExecutionThread]> for ParallelTxExecutionStage {
-    #[cfg(feature = "alloc")]
-    #[must_use]
-    fn as_ref(&self) -> &[TxExecutionThread] {
-        &self.0 .0
-    }
-    #[cfg(not(feature = "alloc"))]
-    #[must_use]
-    fn as_ref(&self) -> &[TxExecutionThread] {
-        self.0 .0
-    }
-}
-
-/// ParallelTxsComponent is an XDR Struct defines as:
-///
-/// ```text
-/// struct ParallelTxsComponent
-/// {
-///   int64* baseFee;
-///   ParallelTxExecutionStage executionStages<>;
-/// };
-/// ```
-///
-#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
-#[cfg_attr(
-    all(feature = "serde", feature = "alloc"),
-    derive(serde::Serialize, serde::Deserialize),
-    serde(rename_all = "snake_case")
-)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-pub struct ParallelTxsComponent {
-    pub base_fee: Option<i64>,
-    pub execution_stages: VecM<ParallelTxExecutionStage>,
-}
-
-impl ReadXdr for ParallelTxsComponent {
-    #[cfg(feature = "std")]
-    fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
-        r.with_limited_depth(|r| {
-            Ok(Self {
-                base_fee: Option::<i64>::read_xdr(r)?,
-                execution_stages: VecM::<ParallelTxExecutionStage>::read_xdr(r)?,
-            })
-        })
-    }
-}
-
-impl WriteXdr for ParallelTxsComponent {
-    #[cfg(feature = "std")]
-    fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
-        w.with_limited_depth(|w| {
-            self.base_fee.write_xdr(w)?;
-            self.execution_stages.write_xdr(w)?;
-            Ok(())
         })
     }
 }
@@ -20489,7 +20173,7 @@ pub struct TxSetComponentTxsMaybeDiscountedFee {
 }
 
 impl ReadXdr for TxSetComponentTxsMaybeDiscountedFee {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -20501,7 +20185,7 @@ impl ReadXdr for TxSetComponentTxsMaybeDiscountedFee {
 }
 
 impl WriteXdr for TxSetComponentTxsMaybeDiscountedFee {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.base_fee.write_xdr(w)?;
@@ -20590,7 +20274,7 @@ impl Variants<TxSetComponentType> for TxSetComponent {
 impl Union<TxSetComponentType> for TxSetComponent {}
 
 impl ReadXdr for TxSetComponent {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: TxSetComponentType = <TxSetComponentType as ReadXdr>::read_xdr(r)?;
@@ -20610,7 +20294,7 @@ impl ReadXdr for TxSetComponent {
 }
 
 impl WriteXdr for TxSetComponent {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -20630,8 +20314,6 @@ impl WriteXdr for TxSetComponent {
 /// {
 /// case 0:
 ///     TxSetComponent v0Components<>;
-/// case 1:
-///     ParallelTxsComponent parallelTxsComponent;
 /// };
 /// ```
 ///
@@ -20647,18 +20329,16 @@ impl WriteXdr for TxSetComponent {
 #[allow(clippy::large_enum_variant)]
 pub enum TransactionPhase {
     V0(VecM<TxSetComponent>),
-    V1(ParallelTxsComponent),
 }
 
 impl TransactionPhase {
-    pub const VARIANTS: [i32; 2] = [0, 1];
-    pub const VARIANTS_STR: [&'static str; 2] = ["V0", "V1"];
+    pub const VARIANTS: [i32; 1] = [0];
+    pub const VARIANTS_STR: [&'static str; 1] = ["V0"];
 
     #[must_use]
     pub const fn name(&self) -> &'static str {
         match self {
             Self::V0(_) => "V0",
-            Self::V1(_) => "V1",
         }
     }
 
@@ -20667,12 +20347,11 @@ impl TransactionPhase {
         #[allow(clippy::match_same_arms)]
         match self {
             Self::V0(_) => 0,
-            Self::V1(_) => 1,
         }
     }
 
     #[must_use]
-    pub const fn variants() -> [i32; 2] {
+    pub const fn variants() -> [i32; 1] {
         Self::VARIANTS
     }
 }
@@ -20700,14 +20379,13 @@ impl Variants<i32> for TransactionPhase {
 impl Union<i32> for TransactionPhase {}
 
 impl ReadXdr for TransactionPhase {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
             #[allow(clippy::match_same_arms, clippy::match_wildcard_for_single_variants)]
             let v = match dv {
                 0 => Self::V0(VecM::<TxSetComponent>::read_xdr(r)?),
-                1 => Self::V1(ParallelTxsComponent::read_xdr(r)?),
                 #[allow(unreachable_patterns)]
                 _ => return Err(Error::Invalid),
             };
@@ -20717,14 +20395,13 @@ impl ReadXdr for TransactionPhase {
 }
 
 impl WriteXdr for TransactionPhase {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
             #[allow(clippy::match_same_arms)]
             match self {
                 Self::V0(v) => v.write_xdr(w)?,
-                Self::V1(v) => v.write_xdr(w)?,
             };
             Ok(())
         })
@@ -20755,7 +20432,7 @@ pub struct TransactionSet {
 }
 
 impl ReadXdr for TransactionSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -20767,7 +20444,7 @@ impl ReadXdr for TransactionSet {
 }
 
 impl WriteXdr for TransactionSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.previous_ledger_hash.write_xdr(w)?;
@@ -20801,7 +20478,7 @@ pub struct TransactionSetV1 {
 }
 
 impl ReadXdr for TransactionSetV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -20813,7 +20490,7 @@ impl ReadXdr for TransactionSetV1 {
 }
 
 impl WriteXdr for TransactionSetV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.previous_ledger_hash.write_xdr(w)?;
@@ -20896,7 +20573,7 @@ impl Variants<i32> for GeneralizedTransactionSet {
 impl Union<i32> for GeneralizedTransactionSet {}
 
 impl ReadXdr for GeneralizedTransactionSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -20912,7 +20589,7 @@ impl ReadXdr for GeneralizedTransactionSet {
 }
 
 impl WriteXdr for GeneralizedTransactionSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -20949,7 +20626,7 @@ pub struct TransactionResultPair {
 }
 
 impl ReadXdr for TransactionResultPair {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -20961,7 +20638,7 @@ impl ReadXdr for TransactionResultPair {
 }
 
 impl WriteXdr for TransactionResultPair {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.transaction_hash.write_xdr(w)?;
@@ -20993,7 +20670,7 @@ pub struct TransactionResultSet {
 }
 
 impl ReadXdr for TransactionResultSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -21004,7 +20681,7 @@ impl ReadXdr for TransactionResultSet {
 }
 
 impl WriteXdr for TransactionResultSet {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.results.write_xdr(w)?;
@@ -21090,7 +20767,7 @@ impl Variants<i32> for TransactionHistoryEntryExt {
 impl Union<i32> for TransactionHistoryEntryExt {}
 
 impl ReadXdr for TransactionHistoryEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -21107,7 +20784,7 @@ impl ReadXdr for TransactionHistoryEntryExt {
 }
 
 impl WriteXdr for TransactionHistoryEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -21156,7 +20833,7 @@ pub struct TransactionHistoryEntry {
 }
 
 impl ReadXdr for TransactionHistoryEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -21169,7 +20846,7 @@ impl ReadXdr for TransactionHistoryEntry {
 }
 
 impl WriteXdr for TransactionHistoryEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ledger_seq.write_xdr(w)?;
@@ -21252,7 +20929,7 @@ impl Variants<i32> for TransactionHistoryResultEntryExt {
 impl Union<i32> for TransactionHistoryResultEntryExt {}
 
 impl ReadXdr for TransactionHistoryResultEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -21268,7 +20945,7 @@ impl ReadXdr for TransactionHistoryResultEntryExt {
 }
 
 impl WriteXdr for TransactionHistoryResultEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -21314,7 +20991,7 @@ pub struct TransactionHistoryResultEntry {
 }
 
 impl ReadXdr for TransactionHistoryResultEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -21327,7 +21004,7 @@ impl ReadXdr for TransactionHistoryResultEntry {
 }
 
 impl WriteXdr for TransactionHistoryResultEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ledger_seq.write_xdr(w)?;
@@ -21410,7 +21087,7 @@ impl Variants<i32> for LedgerHeaderHistoryEntryExt {
 impl Union<i32> for LedgerHeaderHistoryEntryExt {}
 
 impl ReadXdr for LedgerHeaderHistoryEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -21426,7 +21103,7 @@ impl ReadXdr for LedgerHeaderHistoryEntryExt {
 }
 
 impl WriteXdr for LedgerHeaderHistoryEntryExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -21472,7 +21149,7 @@ pub struct LedgerHeaderHistoryEntry {
 }
 
 impl ReadXdr for LedgerHeaderHistoryEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -21485,7 +21162,7 @@ impl ReadXdr for LedgerHeaderHistoryEntry {
 }
 
 impl WriteXdr for LedgerHeaderHistoryEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.hash.write_xdr(w)?;
@@ -21520,7 +21197,7 @@ pub struct LedgerScpMessages {
 }
 
 impl ReadXdr for LedgerScpMessages {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -21532,7 +21209,7 @@ impl ReadXdr for LedgerScpMessages {
 }
 
 impl WriteXdr for LedgerScpMessages {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ledger_seq.write_xdr(w)?;
@@ -21566,7 +21243,7 @@ pub struct ScpHistoryEntryV0 {
 }
 
 impl ReadXdr for ScpHistoryEntryV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -21578,7 +21255,7 @@ impl ReadXdr for ScpHistoryEntryV0 {
 }
 
 impl WriteXdr for ScpHistoryEntryV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.quorum_sets.write_xdr(w)?;
@@ -21660,7 +21337,7 @@ impl Variants<i32> for ScpHistoryEntry {
 impl Union<i32> for ScpHistoryEntry {}
 
 impl ReadXdr for ScpHistoryEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -21676,7 +21353,7 @@ impl ReadXdr for ScpHistoryEntry {
 }
 
 impl WriteXdr for ScpHistoryEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -21788,7 +21465,7 @@ impl From<LedgerEntryChangeType> for i32 {
 }
 
 impl ReadXdr for LedgerEntryChangeType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -21799,7 +21476,7 @@ impl ReadXdr for LedgerEntryChangeType {
 }
 
 impl WriteXdr for LedgerEntryChangeType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -21900,7 +21577,7 @@ impl Variants<LedgerEntryChangeType> for LedgerEntryChange {
 impl Union<LedgerEntryChangeType> for LedgerEntryChange {}
 
 impl ReadXdr for LedgerEntryChange {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: LedgerEntryChangeType = <LedgerEntryChangeType as ReadXdr>::read_xdr(r)?;
@@ -21919,7 +21596,7 @@ impl ReadXdr for LedgerEntryChange {
 }
 
 impl WriteXdr for LedgerEntryChange {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -21975,7 +21652,7 @@ impl AsRef<VecM<LedgerEntryChange>> for LedgerEntryChanges {
 }
 
 impl ReadXdr for LedgerEntryChanges {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = VecM::<LedgerEntryChange>::read_xdr(r)?;
@@ -21986,7 +21663,7 @@ impl ReadXdr for LedgerEntryChanges {
 }
 
 impl WriteXdr for LedgerEntryChanges {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -22063,7 +21740,7 @@ pub struct OperationMeta {
 }
 
 impl ReadXdr for OperationMeta {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -22074,7 +21751,7 @@ impl ReadXdr for OperationMeta {
 }
 
 impl WriteXdr for OperationMeta {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.changes.write_xdr(w)?;
@@ -22107,7 +21784,7 @@ pub struct TransactionMetaV1 {
 }
 
 impl ReadXdr for TransactionMetaV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -22119,7 +21796,7 @@ impl ReadXdr for TransactionMetaV1 {
 }
 
 impl WriteXdr for TransactionMetaV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.tx_changes.write_xdr(w)?;
@@ -22157,7 +21834,7 @@ pub struct TransactionMetaV2 {
 }
 
 impl ReadXdr for TransactionMetaV2 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -22170,7 +21847,7 @@ impl ReadXdr for TransactionMetaV2 {
 }
 
 impl WriteXdr for TransactionMetaV2 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.tx_changes_before.write_xdr(w)?;
@@ -22275,7 +21952,7 @@ impl From<ContractEventType> for i32 {
 }
 
 impl ReadXdr for ContractEventType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -22286,7 +21963,7 @@ impl ReadXdr for ContractEventType {
 }
 
 impl WriteXdr for ContractEventType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -22319,7 +21996,7 @@ pub struct ContractEventV0 {
 }
 
 impl ReadXdr for ContractEventV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -22331,7 +22008,7 @@ impl ReadXdr for ContractEventV0 {
 }
 
 impl WriteXdr for ContractEventV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.topics.write_xdr(w)?;
@@ -22417,7 +22094,7 @@ impl Variants<i32> for ContractEventBody {
 impl Union<i32> for ContractEventBody {}
 
 impl ReadXdr for ContractEventBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -22433,7 +22110,7 @@ impl ReadXdr for ContractEventBody {
 }
 
 impl WriteXdr for ContractEventBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -22487,7 +22164,7 @@ pub struct ContractEvent {
 }
 
 impl ReadXdr for ContractEvent {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -22501,7 +22178,7 @@ impl ReadXdr for ContractEvent {
 }
 
 impl WriteXdr for ContractEvent {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -22537,7 +22214,7 @@ pub struct DiagnosticEvent {
 }
 
 impl ReadXdr for DiagnosticEvent {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -22549,13 +22226,119 @@ impl ReadXdr for DiagnosticEvent {
 }
 
 impl WriteXdr for DiagnosticEvent {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.in_successful_contract_call.write_xdr(w)?;
             self.event.write_xdr(w)?;
             Ok(())
         })
+    }
+}
+
+/// DiagnosticEvents is an XDR Typedef defines as:
+///
+/// ```text
+/// typedef DiagnosticEvent DiagnosticEvents<>;
+/// ```
+///
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[derive(Default)]
+#[cfg_attr(
+    all(feature = "serde", feature = "alloc"),
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "snake_case")
+)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[derive(Debug)]
+pub struct DiagnosticEvents(pub VecM<DiagnosticEvent>);
+
+impl From<DiagnosticEvents> for VecM<DiagnosticEvent> {
+    #[must_use]
+    fn from(x: DiagnosticEvents) -> Self {
+        x.0
+    }
+}
+
+impl From<VecM<DiagnosticEvent>> for DiagnosticEvents {
+    #[must_use]
+    fn from(x: VecM<DiagnosticEvent>) -> Self {
+        DiagnosticEvents(x)
+    }
+}
+
+impl AsRef<VecM<DiagnosticEvent>> for DiagnosticEvents {
+    #[must_use]
+    fn as_ref(&self) -> &VecM<DiagnosticEvent> {
+        &self.0
+    }
+}
+
+impl ReadXdr for DiagnosticEvents {
+    #[cfg(any(feature = "std", feature = "no_std"))]
+    fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
+        r.with_limited_depth(|r| {
+            let i = VecM::<DiagnosticEvent>::read_xdr(r)?;
+            let v = DiagnosticEvents(i);
+            Ok(v)
+        })
+    }
+}
+
+impl WriteXdr for DiagnosticEvents {
+    #[cfg(any(feature = "std", feature = "no_std"))]
+    fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
+        w.with_limited_depth(|w| self.0.write_xdr(w))
+    }
+}
+
+impl Deref for DiagnosticEvents {
+    type Target = VecM<DiagnosticEvent>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<DiagnosticEvents> for Vec<DiagnosticEvent> {
+    #[must_use]
+    fn from(x: DiagnosticEvents) -> Self {
+        x.0 .0
+    }
+}
+
+impl TryFrom<Vec<DiagnosticEvent>> for DiagnosticEvents {
+    type Error = Error;
+    fn try_from(x: Vec<DiagnosticEvent>) -> Result<Self> {
+        Ok(DiagnosticEvents(x.try_into()?))
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl TryFrom<&Vec<DiagnosticEvent>> for DiagnosticEvents {
+    type Error = Error;
+    fn try_from(x: &Vec<DiagnosticEvent>) -> Result<Self> {
+        Ok(DiagnosticEvents(x.try_into()?))
+    }
+}
+
+impl AsRef<Vec<DiagnosticEvent>> for DiagnosticEvents {
+    #[must_use]
+    fn as_ref(&self) -> &Vec<DiagnosticEvent> {
+        &self.0 .0
+    }
+}
+
+impl AsRef<[DiagnosticEvent]> for DiagnosticEvents {
+    #[cfg(feature = "alloc")]
+    #[must_use]
+    fn as_ref(&self) -> &[DiagnosticEvent] {
+        &self.0 .0
+    }
+    #[cfg(not(feature = "alloc"))]
+    #[must_use]
+    fn as_ref(&self) -> &[DiagnosticEvent] {
+        self.0 .0
     }
 }
 
@@ -22613,7 +22396,7 @@ pub struct SorobanTransactionMetaExtV1 {
 }
 
 impl ReadXdr for SorobanTransactionMetaExtV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -22627,7 +22410,7 @@ impl ReadXdr for SorobanTransactionMetaExtV1 {
 }
 
 impl WriteXdr for SorobanTransactionMetaExtV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -22717,7 +22500,7 @@ impl Variants<i32> for SorobanTransactionMetaExt {
 impl Union<i32> for SorobanTransactionMetaExt {}
 
 impl ReadXdr for SorobanTransactionMetaExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -22734,7 +22517,7 @@ impl ReadXdr for SorobanTransactionMetaExt {
 }
 
 impl WriteXdr for SorobanTransactionMetaExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -22782,7 +22565,7 @@ pub struct SorobanTransactionMeta {
 }
 
 impl ReadXdr for SorobanTransactionMeta {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -22796,7 +22579,7 @@ impl ReadXdr for SorobanTransactionMeta {
 }
 
 impl WriteXdr for SorobanTransactionMeta {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -22842,7 +22625,7 @@ pub struct TransactionMetaV3 {
 }
 
 impl ReadXdr for TransactionMetaV3 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -22857,7 +22640,7 @@ impl ReadXdr for TransactionMetaV3 {
 }
 
 impl WriteXdr for TransactionMetaV3 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -22894,7 +22677,7 @@ pub struct InvokeHostFunctionSuccessPreImage {
 }
 
 impl ReadXdr for InvokeHostFunctionSuccessPreImage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -22906,7 +22689,7 @@ impl ReadXdr for InvokeHostFunctionSuccessPreImage {
 }
 
 impl WriteXdr for InvokeHostFunctionSuccessPreImage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.return_value.write_xdr(w)?;
@@ -23003,7 +22786,7 @@ impl Variants<i32> for TransactionMeta {
 impl Union<i32> for TransactionMeta {}
 
 impl ReadXdr for TransactionMeta {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -23022,7 +22805,7 @@ impl ReadXdr for TransactionMeta {
 }
 
 impl WriteXdr for TransactionMeta {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -23064,7 +22847,7 @@ pub struct TransactionResultMeta {
 }
 
 impl ReadXdr for TransactionResultMeta {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -23077,7 +22860,7 @@ impl ReadXdr for TransactionResultMeta {
 }
 
 impl WriteXdr for TransactionResultMeta {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.result.write_xdr(w)?;
@@ -23112,7 +22895,7 @@ pub struct UpgradeEntryMeta {
 }
 
 impl ReadXdr for UpgradeEntryMeta {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -23124,7 +22907,7 @@ impl ReadXdr for UpgradeEntryMeta {
 }
 
 impl WriteXdr for UpgradeEntryMeta {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.upgrade.write_xdr(w)?;
@@ -23173,7 +22956,7 @@ pub struct LedgerCloseMetaV0 {
 }
 
 impl ReadXdr for LedgerCloseMetaV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -23188,7 +22971,7 @@ impl ReadXdr for LedgerCloseMetaV0 {
 }
 
 impl WriteXdr for LedgerCloseMetaV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ledger_header.write_xdr(w)?;
@@ -23225,7 +23008,7 @@ pub struct LedgerCloseMetaExtV1 {
 }
 
 impl ReadXdr for LedgerCloseMetaExtV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -23237,7 +23020,7 @@ impl ReadXdr for LedgerCloseMetaExtV1 {
 }
 
 impl WriteXdr for LedgerCloseMetaExtV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -23324,7 +23107,7 @@ impl Variants<i32> for LedgerCloseMetaExt {
 impl Union<i32> for LedgerCloseMetaExt {}
 
 impl ReadXdr for LedgerCloseMetaExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -23341,7 +23124,7 @@ impl ReadXdr for LedgerCloseMetaExt {
 }
 
 impl WriteXdr for LedgerCloseMetaExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -23411,7 +23194,7 @@ pub struct LedgerCloseMetaV1 {
 }
 
 impl ReadXdr for LedgerCloseMetaV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -23430,7 +23213,7 @@ impl ReadXdr for LedgerCloseMetaV1 {
 }
 
 impl WriteXdr for LedgerCloseMetaV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -23524,7 +23307,7 @@ impl Variants<i32> for LedgerCloseMeta {
 impl Union<i32> for LedgerCloseMeta {}
 
 impl ReadXdr for LedgerCloseMeta {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -23541,7 +23324,7 @@ impl ReadXdr for LedgerCloseMeta {
 }
 
 impl WriteXdr for LedgerCloseMeta {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -23659,7 +23442,7 @@ impl From<ErrorCode> for i32 {
 }
 
 impl ReadXdr for ErrorCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -23670,7 +23453,7 @@ impl ReadXdr for ErrorCode {
 }
 
 impl WriteXdr for ErrorCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -23703,7 +23486,7 @@ pub struct SError {
 }
 
 impl ReadXdr for SError {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -23715,7 +23498,7 @@ impl ReadXdr for SError {
 }
 
 impl WriteXdr for SError {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.code.write_xdr(w)?;
@@ -23747,7 +23530,7 @@ pub struct SendMore {
 }
 
 impl ReadXdr for SendMore {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -23758,7 +23541,7 @@ impl ReadXdr for SendMore {
 }
 
 impl WriteXdr for SendMore {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.num_messages.write_xdr(w)?;
@@ -23791,7 +23574,7 @@ pub struct SendMoreExtended {
 }
 
 impl ReadXdr for SendMoreExtended {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -23803,7 +23586,7 @@ impl ReadXdr for SendMoreExtended {
 }
 
 impl WriteXdr for SendMoreExtended {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.num_messages.write_xdr(w)?;
@@ -23839,7 +23622,7 @@ pub struct AuthCert {
 }
 
 impl ReadXdr for AuthCert {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -23852,7 +23635,7 @@ impl ReadXdr for AuthCert {
 }
 
 impl WriteXdr for AuthCert {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.pubkey.write_xdr(w)?;
@@ -23901,7 +23684,7 @@ pub struct Hello {
 }
 
 impl ReadXdr for Hello {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -23920,7 +23703,7 @@ impl ReadXdr for Hello {
 }
 
 impl WriteXdr for Hello {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ledger_version.write_xdr(w)?;
@@ -23967,7 +23750,7 @@ pub struct Auth {
 }
 
 impl ReadXdr for Auth {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -23978,7 +23761,7 @@ impl ReadXdr for Auth {
 }
 
 impl WriteXdr for Auth {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.flags.write_xdr(w)?;
@@ -24073,7 +23856,7 @@ impl From<IpAddrType> for i32 {
 }
 
 impl ReadXdr for IpAddrType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -24084,7 +23867,7 @@ impl ReadXdr for IpAddrType {
 }
 
 impl WriteXdr for IpAddrType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -24170,7 +23953,7 @@ impl Variants<IpAddrType> for PeerAddressIp {
 impl Union<IpAddrType> for PeerAddressIp {}
 
 impl ReadXdr for PeerAddressIp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: IpAddrType = <IpAddrType as ReadXdr>::read_xdr(r)?;
@@ -24187,7 +23970,7 @@ impl ReadXdr for PeerAddressIp {
 }
 
 impl WriteXdr for PeerAddressIp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -24234,7 +24017,7 @@ pub struct PeerAddress {
 }
 
 impl ReadXdr for PeerAddress {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -24247,7 +24030,7 @@ impl ReadXdr for PeerAddress {
 }
 
 impl WriteXdr for PeerAddress {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ip.write_xdr(w)?;
@@ -24493,7 +24276,7 @@ impl From<MessageType> for i32 {
 }
 
 impl ReadXdr for MessageType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -24504,7 +24287,7 @@ impl ReadXdr for MessageType {
 }
 
 impl WriteXdr for MessageType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -24537,7 +24320,7 @@ pub struct DontHave {
 }
 
 impl ReadXdr for DontHave {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -24549,7 +24332,7 @@ impl ReadXdr for DontHave {
 }
 
 impl WriteXdr for DontHave {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.type_.write_xdr(w)?;
@@ -24648,7 +24431,7 @@ impl From<SurveyMessageCommandType> for i32 {
 }
 
 impl ReadXdr for SurveyMessageCommandType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -24659,7 +24442,7 @@ impl ReadXdr for SurveyMessageCommandType {
 }
 
 impl WriteXdr for SurveyMessageCommandType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -24762,7 +24545,7 @@ impl From<SurveyMessageResponseType> for i32 {
 }
 
 impl ReadXdr for SurveyMessageResponseType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -24773,7 +24556,7 @@ impl ReadXdr for SurveyMessageResponseType {
 }
 
 impl WriteXdr for SurveyMessageResponseType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -24808,7 +24591,7 @@ pub struct TimeSlicedSurveyStartCollectingMessage {
 }
 
 impl ReadXdr for TimeSlicedSurveyStartCollectingMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -24821,7 +24604,7 @@ impl ReadXdr for TimeSlicedSurveyStartCollectingMessage {
 }
 
 impl WriteXdr for TimeSlicedSurveyStartCollectingMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.surveyor_id.write_xdr(w)?;
@@ -24856,7 +24639,7 @@ pub struct SignedTimeSlicedSurveyStartCollectingMessage {
 }
 
 impl ReadXdr for SignedTimeSlicedSurveyStartCollectingMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -24868,7 +24651,7 @@ impl ReadXdr for SignedTimeSlicedSurveyStartCollectingMessage {
 }
 
 impl WriteXdr for SignedTimeSlicedSurveyStartCollectingMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.signature.write_xdr(w)?;
@@ -24904,7 +24687,7 @@ pub struct TimeSlicedSurveyStopCollectingMessage {
 }
 
 impl ReadXdr for TimeSlicedSurveyStopCollectingMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -24917,7 +24700,7 @@ impl ReadXdr for TimeSlicedSurveyStopCollectingMessage {
 }
 
 impl WriteXdr for TimeSlicedSurveyStopCollectingMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.surveyor_id.write_xdr(w)?;
@@ -24952,7 +24735,7 @@ pub struct SignedTimeSlicedSurveyStopCollectingMessage {
 }
 
 impl ReadXdr for SignedTimeSlicedSurveyStopCollectingMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -24964,7 +24747,7 @@ impl ReadXdr for SignedTimeSlicedSurveyStopCollectingMessage {
 }
 
 impl WriteXdr for SignedTimeSlicedSurveyStopCollectingMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.signature.write_xdr(w)?;
@@ -25004,7 +24787,7 @@ pub struct SurveyRequestMessage {
 }
 
 impl ReadXdr for SurveyRequestMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -25019,7 +24802,7 @@ impl ReadXdr for SurveyRequestMessage {
 }
 
 impl WriteXdr for SurveyRequestMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.surveyor_peer_id.write_xdr(w)?;
@@ -25060,7 +24843,7 @@ pub struct TimeSlicedSurveyRequestMessage {
 }
 
 impl ReadXdr for TimeSlicedSurveyRequestMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -25074,7 +24857,7 @@ impl ReadXdr for TimeSlicedSurveyRequestMessage {
 }
 
 impl WriteXdr for TimeSlicedSurveyRequestMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.request.write_xdr(w)?;
@@ -25110,7 +24893,7 @@ pub struct SignedSurveyRequestMessage {
 }
 
 impl ReadXdr for SignedSurveyRequestMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -25122,7 +24905,7 @@ impl ReadXdr for SignedSurveyRequestMessage {
 }
 
 impl WriteXdr for SignedSurveyRequestMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.request_signature.write_xdr(w)?;
@@ -25156,7 +24939,7 @@ pub struct SignedTimeSlicedSurveyRequestMessage {
 }
 
 impl ReadXdr for SignedTimeSlicedSurveyRequestMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -25168,7 +24951,7 @@ impl ReadXdr for SignedTimeSlicedSurveyRequestMessage {
 }
 
 impl WriteXdr for SignedTimeSlicedSurveyRequestMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.request_signature.write_xdr(w)?;
@@ -25218,7 +25001,7 @@ impl AsRef<BytesM<64000>> for EncryptedBody {
 }
 
 impl ReadXdr for EncryptedBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = BytesM::<64000>::read_xdr(r)?;
@@ -25229,7 +25012,7 @@ impl ReadXdr for EncryptedBody {
 }
 
 impl WriteXdr for EncryptedBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -25314,7 +25097,7 @@ pub struct SurveyResponseMessage {
 }
 
 impl ReadXdr for SurveyResponseMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -25329,7 +25112,7 @@ impl ReadXdr for SurveyResponseMessage {
 }
 
 impl WriteXdr for SurveyResponseMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.surveyor_peer_id.write_xdr(w)?;
@@ -25366,7 +25149,7 @@ pub struct TimeSlicedSurveyResponseMessage {
 }
 
 impl ReadXdr for TimeSlicedSurveyResponseMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -25378,7 +25161,7 @@ impl ReadXdr for TimeSlicedSurveyResponseMessage {
 }
 
 impl WriteXdr for TimeSlicedSurveyResponseMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.response.write_xdr(w)?;
@@ -25412,7 +25195,7 @@ pub struct SignedSurveyResponseMessage {
 }
 
 impl ReadXdr for SignedSurveyResponseMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -25424,7 +25207,7 @@ impl ReadXdr for SignedSurveyResponseMessage {
 }
 
 impl WriteXdr for SignedSurveyResponseMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.response_signature.write_xdr(w)?;
@@ -25458,7 +25241,7 @@ pub struct SignedTimeSlicedSurveyResponseMessage {
 }
 
 impl ReadXdr for SignedTimeSlicedSurveyResponseMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -25470,7 +25253,7 @@ impl ReadXdr for SignedTimeSlicedSurveyResponseMessage {
 }
 
 impl WriteXdr for SignedTimeSlicedSurveyResponseMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.response_signature.write_xdr(w)?;
@@ -25532,7 +25315,7 @@ pub struct PeerStats {
 }
 
 impl ReadXdr for PeerStats {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -25557,7 +25340,7 @@ impl ReadXdr for PeerStats {
 }
 
 impl WriteXdr for PeerStats {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.id.write_xdr(w)?;
@@ -25620,7 +25403,7 @@ impl AsRef<VecM<PeerStats, 25>> for PeerStatList {
 }
 
 impl ReadXdr for PeerStatList {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = VecM::<PeerStats, 25>::read_xdr(r)?;
@@ -25631,7 +25414,7 @@ impl ReadXdr for PeerStatList {
 }
 
 impl WriteXdr for PeerStatList {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -25732,7 +25515,7 @@ pub struct TimeSlicedNodeData {
 }
 
 impl ReadXdr for TimeSlicedNodeData {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -25752,7 +25535,7 @@ impl ReadXdr for TimeSlicedNodeData {
 }
 
 impl WriteXdr for TimeSlicedNodeData {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.added_authenticated_peers.write_xdr(w)?;
@@ -25794,7 +25577,7 @@ pub struct TimeSlicedPeerData {
 }
 
 impl ReadXdr for TimeSlicedPeerData {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -25806,7 +25589,7 @@ impl ReadXdr for TimeSlicedPeerData {
 }
 
 impl WriteXdr for TimeSlicedPeerData {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.peer_stats.write_xdr(w)?;
@@ -25856,7 +25639,7 @@ impl AsRef<VecM<TimeSlicedPeerData, 25>> for TimeSlicedPeerDataList {
 }
 
 impl ReadXdr for TimeSlicedPeerDataList {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = VecM::<TimeSlicedPeerData, 25>::read_xdr(r)?;
@@ -25867,7 +25650,7 @@ impl ReadXdr for TimeSlicedPeerDataList {
 }
 
 impl WriteXdr for TimeSlicedPeerDataList {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -25951,7 +25734,7 @@ pub struct TopologyResponseBodyV0 {
 }
 
 impl ReadXdr for TopologyResponseBodyV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -25965,7 +25748,7 @@ impl ReadXdr for TopologyResponseBodyV0 {
 }
 
 impl WriteXdr for TopologyResponseBodyV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.inbound_peers.write_xdr(w)?;
@@ -26011,7 +25794,7 @@ pub struct TopologyResponseBodyV1 {
 }
 
 impl ReadXdr for TopologyResponseBodyV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -26027,7 +25810,7 @@ impl ReadXdr for TopologyResponseBodyV1 {
 }
 
 impl WriteXdr for TopologyResponseBodyV1 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.inbound_peers.write_xdr(w)?;
@@ -26067,7 +25850,7 @@ pub struct TopologyResponseBodyV2 {
 }
 
 impl ReadXdr for TopologyResponseBodyV2 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -26080,7 +25863,7 @@ impl ReadXdr for TopologyResponseBodyV2 {
 }
 
 impl WriteXdr for TopologyResponseBodyV2 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.inbound_peers.write_xdr(w)?;
@@ -26177,7 +25960,7 @@ impl Variants<SurveyMessageResponseType> for SurveyResponseBody {
 impl Union<SurveyMessageResponseType> for SurveyResponseBody {}
 
 impl ReadXdr for SurveyResponseBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: SurveyMessageResponseType =
@@ -26196,7 +25979,7 @@ impl ReadXdr for SurveyResponseBody {
 }
 
 impl WriteXdr for SurveyResponseBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -26259,7 +26042,7 @@ impl AsRef<VecM<Hash, 1000>> for TxAdvertVector {
 }
 
 impl ReadXdr for TxAdvertVector {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = VecM::<Hash, 1000>::read_xdr(r)?;
@@ -26270,7 +26053,7 @@ impl ReadXdr for TxAdvertVector {
 }
 
 impl WriteXdr for TxAdvertVector {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -26347,7 +26130,7 @@ pub struct FloodAdvert {
 }
 
 impl ReadXdr for FloodAdvert {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -26358,7 +26141,7 @@ impl ReadXdr for FloodAdvert {
 }
 
 impl WriteXdr for FloodAdvert {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.tx_hashes.write_xdr(w)?;
@@ -26415,7 +26198,7 @@ impl AsRef<VecM<Hash, 1000>> for TxDemandVector {
 }
 
 impl ReadXdr for TxDemandVector {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = VecM::<Hash, 1000>::read_xdr(r)?;
@@ -26426,7 +26209,7 @@ impl ReadXdr for TxDemandVector {
 }
 
 impl WriteXdr for TxDemandVector {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -26503,7 +26286,7 @@ pub struct FloodDemand {
 }
 
 impl ReadXdr for FloodDemand {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -26514,7 +26297,7 @@ impl ReadXdr for FloodDemand {
 }
 
 impl WriteXdr for FloodDemand {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.tx_hashes.write_xdr(w)?;
@@ -26775,7 +26558,7 @@ impl Variants<MessageType> for StellarMessage {
 impl Union<MessageType> for StellarMessage {}
 
 impl ReadXdr for StellarMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: MessageType = <MessageType as ReadXdr>::read_xdr(r)?;
@@ -26834,7 +26617,7 @@ impl ReadXdr for StellarMessage {
 }
 
 impl WriteXdr for StellarMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -26896,7 +26679,7 @@ pub struct AuthenticatedMessageV0 {
 }
 
 impl ReadXdr for AuthenticatedMessageV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -26909,7 +26692,7 @@ impl ReadXdr for AuthenticatedMessageV0 {
 }
 
 impl WriteXdr for AuthenticatedMessageV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.sequence.write_xdr(w)?;
@@ -26997,7 +26780,7 @@ impl Variants<u32> for AuthenticatedMessage {
 impl Union<u32> for AuthenticatedMessage {}
 
 impl ReadXdr for AuthenticatedMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: u32 = <u32 as ReadXdr>::read_xdr(r)?;
@@ -27013,7 +26796,7 @@ impl ReadXdr for AuthenticatedMessage {
 }
 
 impl WriteXdr for AuthenticatedMessage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -27108,7 +26891,7 @@ impl Variants<LiquidityPoolType> for LiquidityPoolParameters {
 impl Union<LiquidityPoolType> for LiquidityPoolParameters {}
 
 impl ReadXdr for LiquidityPoolParameters {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: LiquidityPoolType = <LiquidityPoolType as ReadXdr>::read_xdr(r)?;
@@ -27128,7 +26911,7 @@ impl ReadXdr for LiquidityPoolParameters {
 }
 
 impl WriteXdr for LiquidityPoolParameters {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -27163,7 +26946,7 @@ pub struct MuxedAccountMed25519 {
 }
 
 impl ReadXdr for MuxedAccountMed25519 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -27175,7 +26958,7 @@ impl ReadXdr for MuxedAccountMed25519 {
 }
 
 impl WriteXdr for MuxedAccountMed25519 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.id.write_xdr(w)?;
@@ -27264,7 +27047,7 @@ impl Variants<CryptoKeyType> for MuxedAccount {
 impl Union<CryptoKeyType> for MuxedAccount {}
 
 impl ReadXdr for MuxedAccount {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: CryptoKeyType = <CryptoKeyType as ReadXdr>::read_xdr(r)?;
@@ -27283,7 +27066,7 @@ impl ReadXdr for MuxedAccount {
 }
 
 impl WriteXdr for MuxedAccount {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -27321,7 +27104,7 @@ pub struct DecoratedSignature {
 }
 
 impl ReadXdr for DecoratedSignature {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -27333,7 +27116,7 @@ impl ReadXdr for DecoratedSignature {
 }
 
 impl WriteXdr for DecoratedSignature {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.hint.write_xdr(w)?;
@@ -27585,7 +27368,7 @@ impl From<OperationType> for i32 {
 }
 
 impl ReadXdr for OperationType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -27596,7 +27379,7 @@ impl ReadXdr for OperationType {
 }
 
 impl WriteXdr for OperationType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -27629,7 +27412,7 @@ pub struct CreateAccountOp {
 }
 
 impl ReadXdr for CreateAccountOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -27641,7 +27424,7 @@ impl ReadXdr for CreateAccountOp {
 }
 
 impl WriteXdr for CreateAccountOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.destination.write_xdr(w)?;
@@ -27677,7 +27460,7 @@ pub struct PaymentOp {
 }
 
 impl ReadXdr for PaymentOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -27690,7 +27473,7 @@ impl ReadXdr for PaymentOp {
 }
 
 impl WriteXdr for PaymentOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.destination.write_xdr(w)?;
@@ -27737,7 +27520,7 @@ pub struct PathPaymentStrictReceiveOp {
 }
 
 impl ReadXdr for PathPaymentStrictReceiveOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -27753,7 +27536,7 @@ impl ReadXdr for PathPaymentStrictReceiveOp {
 }
 
 impl WriteXdr for PathPaymentStrictReceiveOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.send_asset.write_xdr(w)?;
@@ -27803,7 +27586,7 @@ pub struct PathPaymentStrictSendOp {
 }
 
 impl ReadXdr for PathPaymentStrictSendOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -27819,7 +27602,7 @@ impl ReadXdr for PathPaymentStrictSendOp {
 }
 
 impl WriteXdr for PathPaymentStrictSendOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.send_asset.write_xdr(w)?;
@@ -27865,7 +27648,7 @@ pub struct ManageSellOfferOp {
 }
 
 impl ReadXdr for ManageSellOfferOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -27880,7 +27663,7 @@ impl ReadXdr for ManageSellOfferOp {
 }
 
 impl WriteXdr for ManageSellOfferOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.selling.write_xdr(w)?;
@@ -27926,7 +27709,7 @@ pub struct ManageBuyOfferOp {
 }
 
 impl ReadXdr for ManageBuyOfferOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -27941,7 +27724,7 @@ impl ReadXdr for ManageBuyOfferOp {
 }
 
 impl WriteXdr for ManageBuyOfferOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.selling.write_xdr(w)?;
@@ -27982,7 +27765,7 @@ pub struct CreatePassiveSellOfferOp {
 }
 
 impl ReadXdr for CreatePassiveSellOfferOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -27996,7 +27779,7 @@ impl ReadXdr for CreatePassiveSellOfferOp {
 }
 
 impl WriteXdr for CreatePassiveSellOfferOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.selling.write_xdr(w)?;
@@ -28053,7 +27836,7 @@ pub struct SetOptionsOp {
 }
 
 impl ReadXdr for SetOptionsOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -28072,7 +27855,7 @@ impl ReadXdr for SetOptionsOp {
 }
 
 impl WriteXdr for SetOptionsOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.inflation_dest.write_xdr(w)?;
@@ -28187,7 +27970,7 @@ impl Variants<AssetType> for ChangeTrustAsset {
 impl Union<AssetType> for ChangeTrustAsset {}
 
 impl ReadXdr for ChangeTrustAsset {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: AssetType = <AssetType as ReadXdr>::read_xdr(r)?;
@@ -28206,7 +27989,7 @@ impl ReadXdr for ChangeTrustAsset {
 }
 
 impl WriteXdr for ChangeTrustAsset {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -28248,7 +28031,7 @@ pub struct ChangeTrustOp {
 }
 
 impl ReadXdr for ChangeTrustOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -28260,7 +28043,7 @@ impl ReadXdr for ChangeTrustOp {
 }
 
 impl WriteXdr for ChangeTrustOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.line.write_xdr(w)?;
@@ -28298,7 +28081,7 @@ pub struct AllowTrustOp {
 }
 
 impl ReadXdr for AllowTrustOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -28311,7 +28094,7 @@ impl ReadXdr for AllowTrustOp {
 }
 
 impl WriteXdr for AllowTrustOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.trustor.write_xdr(w)?;
@@ -28346,7 +28129,7 @@ pub struct ManageDataOp {
 }
 
 impl ReadXdr for ManageDataOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -28358,7 +28141,7 @@ impl ReadXdr for ManageDataOp {
 }
 
 impl WriteXdr for ManageDataOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.data_name.write_xdr(w)?;
@@ -28390,7 +28173,7 @@ pub struct BumpSequenceOp {
 }
 
 impl ReadXdr for BumpSequenceOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -28401,7 +28184,7 @@ impl ReadXdr for BumpSequenceOp {
 }
 
 impl WriteXdr for BumpSequenceOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.bump_to.write_xdr(w)?;
@@ -28436,7 +28219,7 @@ pub struct CreateClaimableBalanceOp {
 }
 
 impl ReadXdr for CreateClaimableBalanceOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -28449,7 +28232,7 @@ impl ReadXdr for CreateClaimableBalanceOp {
 }
 
 impl WriteXdr for CreateClaimableBalanceOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.asset.write_xdr(w)?;
@@ -28482,7 +28265,7 @@ pub struct ClaimClaimableBalanceOp {
 }
 
 impl ReadXdr for ClaimClaimableBalanceOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -28493,7 +28276,7 @@ impl ReadXdr for ClaimClaimableBalanceOp {
 }
 
 impl WriteXdr for ClaimClaimableBalanceOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.balance_id.write_xdr(w)?;
@@ -28524,7 +28307,7 @@ pub struct BeginSponsoringFutureReservesOp {
 }
 
 impl ReadXdr for BeginSponsoringFutureReservesOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -28535,7 +28318,7 @@ impl ReadXdr for BeginSponsoringFutureReservesOp {
 }
 
 impl WriteXdr for BeginSponsoringFutureReservesOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.sponsored_id.write_xdr(w)?;
@@ -28633,7 +28416,7 @@ impl From<RevokeSponsorshipType> for i32 {
 }
 
 impl ReadXdr for RevokeSponsorshipType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -28644,7 +28427,7 @@ impl ReadXdr for RevokeSponsorshipType {
 }
 
 impl WriteXdr for RevokeSponsorshipType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -28677,7 +28460,7 @@ pub struct RevokeSponsorshipOpSigner {
 }
 
 impl ReadXdr for RevokeSponsorshipOpSigner {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -28689,7 +28472,7 @@ impl ReadXdr for RevokeSponsorshipOpSigner {
 }
 
 impl WriteXdr for RevokeSponsorshipOpSigner {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.account_id.write_xdr(w)?;
@@ -28783,7 +28566,7 @@ impl Variants<RevokeSponsorshipType> for RevokeSponsorshipOp {
 impl Union<RevokeSponsorshipType> for RevokeSponsorshipOp {}
 
 impl ReadXdr for RevokeSponsorshipOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: RevokeSponsorshipType = <RevokeSponsorshipType as ReadXdr>::read_xdr(r)?;
@@ -28802,7 +28585,7 @@ impl ReadXdr for RevokeSponsorshipOp {
 }
 
 impl WriteXdr for RevokeSponsorshipOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -28842,7 +28625,7 @@ pub struct ClawbackOp {
 }
 
 impl ReadXdr for ClawbackOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -28855,7 +28638,7 @@ impl ReadXdr for ClawbackOp {
 }
 
 impl WriteXdr for ClawbackOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.asset.write_xdr(w)?;
@@ -28888,7 +28671,7 @@ pub struct ClawbackClaimableBalanceOp {
 }
 
 impl ReadXdr for ClawbackClaimableBalanceOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -28899,7 +28682,7 @@ impl ReadXdr for ClawbackClaimableBalanceOp {
 }
 
 impl WriteXdr for ClawbackClaimableBalanceOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.balance_id.write_xdr(w)?;
@@ -28937,7 +28720,7 @@ pub struct SetTrustLineFlagsOp {
 }
 
 impl ReadXdr for SetTrustLineFlagsOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -28951,7 +28734,7 @@ impl ReadXdr for SetTrustLineFlagsOp {
 }
 
 impl WriteXdr for SetTrustLineFlagsOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.trustor.write_xdr(w)?;
@@ -29001,7 +28784,7 @@ pub struct LiquidityPoolDepositOp {
 }
 
 impl ReadXdr for LiquidityPoolDepositOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -29016,7 +28799,7 @@ impl ReadXdr for LiquidityPoolDepositOp {
 }
 
 impl WriteXdr for LiquidityPoolDepositOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.liquidity_pool_id.write_xdr(w)?;
@@ -29057,7 +28840,7 @@ pub struct LiquidityPoolWithdrawOp {
 }
 
 impl ReadXdr for LiquidityPoolWithdrawOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -29071,7 +28854,7 @@ impl ReadXdr for LiquidityPoolWithdrawOp {
 }
 
 impl WriteXdr for LiquidityPoolWithdrawOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.liquidity_pool_id.write_xdr(w)?;
@@ -29187,7 +28970,7 @@ impl From<HostFunctionType> for i32 {
 }
 
 impl ReadXdr for HostFunctionType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -29198,7 +28981,7 @@ impl ReadXdr for HostFunctionType {
 }
 
 impl WriteXdr for HostFunctionType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -29296,7 +29079,7 @@ impl From<ContractIdPreimageType> for i32 {
 }
 
 impl ReadXdr for ContractIdPreimageType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -29307,7 +29090,7 @@ impl ReadXdr for ContractIdPreimageType {
 }
 
 impl WriteXdr for ContractIdPreimageType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -29340,7 +29123,7 @@ pub struct ContractIdPreimageFromAddress {
 }
 
 impl ReadXdr for ContractIdPreimageFromAddress {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -29352,7 +29135,7 @@ impl ReadXdr for ContractIdPreimageFromAddress {
 }
 
 impl WriteXdr for ContractIdPreimageFromAddress {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.address.write_xdr(w)?;
@@ -29446,7 +29229,7 @@ impl Variants<ContractIdPreimageType> for ContractIdPreimage {
 impl Union<ContractIdPreimageType> for ContractIdPreimage {}
 
 impl ReadXdr for ContractIdPreimage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ContractIdPreimageType = <ContractIdPreimageType as ReadXdr>::read_xdr(r)?;
@@ -29465,7 +29248,7 @@ impl ReadXdr for ContractIdPreimage {
 }
 
 impl WriteXdr for ContractIdPreimage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -29503,7 +29286,7 @@ pub struct CreateContractArgs {
 }
 
 impl ReadXdr for CreateContractArgs {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -29515,7 +29298,7 @@ impl ReadXdr for CreateContractArgs {
 }
 
 impl WriteXdr for CreateContractArgs {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.contract_id_preimage.write_xdr(w)?;
@@ -29552,7 +29335,7 @@ pub struct CreateContractArgsV2 {
 }
 
 impl ReadXdr for CreateContractArgsV2 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -29565,7 +29348,7 @@ impl ReadXdr for CreateContractArgsV2 {
 }
 
 impl WriteXdr for CreateContractArgsV2 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.contract_id_preimage.write_xdr(w)?;
@@ -29601,7 +29384,7 @@ pub struct InvokeContractArgs {
 }
 
 impl ReadXdr for InvokeContractArgs {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -29614,7 +29397,7 @@ impl ReadXdr for InvokeContractArgs {
 }
 
 impl WriteXdr for InvokeContractArgs {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.contract_address.write_xdr(w)?;
@@ -29722,7 +29505,7 @@ impl Variants<HostFunctionType> for HostFunction {
 impl Union<HostFunctionType> for HostFunction {}
 
 impl ReadXdr for HostFunction {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: HostFunctionType = <HostFunctionType as ReadXdr>::read_xdr(r)?;
@@ -29749,7 +29532,7 @@ impl ReadXdr for HostFunction {
 }
 
 impl WriteXdr for HostFunction {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -29863,7 +29646,7 @@ impl From<SorobanAuthorizedFunctionType> for i32 {
 }
 
 impl ReadXdr for SorobanAuthorizedFunctionType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -29874,7 +29657,7 @@ impl ReadXdr for SorobanAuthorizedFunctionType {
 }
 
 impl WriteXdr for SorobanAuthorizedFunctionType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -29979,7 +29762,7 @@ impl Variants<SorobanAuthorizedFunctionType> for SorobanAuthorizedFunction {
 impl Union<SorobanAuthorizedFunctionType> for SorobanAuthorizedFunction {}
 
 impl ReadXdr for SorobanAuthorizedFunction {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: SorobanAuthorizedFunctionType =
@@ -30004,7 +29787,7 @@ impl ReadXdr for SorobanAuthorizedFunction {
 }
 
 impl WriteXdr for SorobanAuthorizedFunction {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -30043,7 +29826,7 @@ pub struct SorobanAuthorizedInvocation {
 }
 
 impl ReadXdr for SorobanAuthorizedInvocation {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -30055,7 +29838,7 @@ impl ReadXdr for SorobanAuthorizedInvocation {
 }
 
 impl WriteXdr for SorobanAuthorizedInvocation {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.function.write_xdr(w)?;
@@ -30093,7 +29876,7 @@ pub struct SorobanAddressCredentials {
 }
 
 impl ReadXdr for SorobanAddressCredentials {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -30107,7 +29890,7 @@ impl ReadXdr for SorobanAddressCredentials {
 }
 
 impl WriteXdr for SorobanAddressCredentials {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.address.write_xdr(w)?;
@@ -30208,7 +29991,7 @@ impl From<SorobanCredentialsType> for i32 {
 }
 
 impl ReadXdr for SorobanCredentialsType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -30219,7 +30002,7 @@ impl ReadXdr for SorobanCredentialsType {
 }
 
 impl WriteXdr for SorobanCredentialsType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -30308,7 +30091,7 @@ impl Variants<SorobanCredentialsType> for SorobanCredentials {
 impl Union<SorobanCredentialsType> for SorobanCredentials {}
 
 impl ReadXdr for SorobanCredentials {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: SorobanCredentialsType = <SorobanCredentialsType as ReadXdr>::read_xdr(r)?;
@@ -30327,7 +30110,7 @@ impl ReadXdr for SorobanCredentials {
 }
 
 impl WriteXdr for SorobanCredentials {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -30365,7 +30148,7 @@ pub struct SorobanAuthorizationEntry {
 }
 
 impl ReadXdr for SorobanAuthorizationEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -30377,7 +30160,7 @@ impl ReadXdr for SorobanAuthorizationEntry {
 }
 
 impl WriteXdr for SorobanAuthorizationEntry {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.credentials.write_xdr(w)?;
@@ -30413,7 +30196,7 @@ pub struct InvokeHostFunctionOp {
 }
 
 impl ReadXdr for InvokeHostFunctionOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -30425,7 +30208,7 @@ impl ReadXdr for InvokeHostFunctionOp {
 }
 
 impl WriteXdr for InvokeHostFunctionOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.host_function.write_xdr(w)?;
@@ -30459,7 +30242,7 @@ pub struct ExtendFootprintTtlOp {
 }
 
 impl ReadXdr for ExtendFootprintTtlOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -30471,7 +30254,7 @@ impl ReadXdr for ExtendFootprintTtlOp {
 }
 
 impl WriteXdr for ExtendFootprintTtlOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -30503,7 +30286,7 @@ pub struct RestoreFootprintOp {
 }
 
 impl ReadXdr for RestoreFootprintOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -30514,7 +30297,7 @@ impl ReadXdr for RestoreFootprintOp {
 }
 
 impl WriteXdr for RestoreFootprintOp {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -30781,7 +30564,7 @@ impl Variants<OperationType> for OperationBody {
 impl Union<OperationType> for OperationBody {}
 
 impl ReadXdr for OperationBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: OperationType = <OperationType as ReadXdr>::read_xdr(r)?;
@@ -30857,7 +30640,7 @@ impl ReadXdr for OperationBody {
 }
 
 impl WriteXdr for OperationBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -30981,7 +30764,7 @@ pub struct Operation {
 }
 
 impl ReadXdr for Operation {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -30993,7 +30776,7 @@ impl ReadXdr for Operation {
 }
 
 impl WriteXdr for Operation {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.source_account.write_xdr(w)?;
@@ -31029,7 +30812,7 @@ pub struct HashIdPreimageOperationId {
 }
 
 impl ReadXdr for HashIdPreimageOperationId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -31042,7 +30825,7 @@ impl ReadXdr for HashIdPreimageOperationId {
 }
 
 impl WriteXdr for HashIdPreimageOperationId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.source_account.write_xdr(w)?;
@@ -31083,7 +30866,7 @@ pub struct HashIdPreimageRevokeId {
 }
 
 impl ReadXdr for HashIdPreimageRevokeId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -31098,7 +30881,7 @@ impl ReadXdr for HashIdPreimageRevokeId {
 }
 
 impl WriteXdr for HashIdPreimageRevokeId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.source_account.write_xdr(w)?;
@@ -31135,7 +30918,7 @@ pub struct HashIdPreimageContractId {
 }
 
 impl ReadXdr for HashIdPreimageContractId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -31147,7 +30930,7 @@ impl ReadXdr for HashIdPreimageContractId {
 }
 
 impl WriteXdr for HashIdPreimageContractId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.network_id.write_xdr(w)?;
@@ -31185,7 +30968,7 @@ pub struct HashIdPreimageSorobanAuthorization {
 }
 
 impl ReadXdr for HashIdPreimageSorobanAuthorization {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -31199,7 +30982,7 @@ impl ReadXdr for HashIdPreimageSorobanAuthorization {
 }
 
 impl WriteXdr for HashIdPreimageSorobanAuthorization {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.network_id.write_xdr(w)?;
@@ -31330,7 +31113,7 @@ impl Variants<EnvelopeType> for HashIdPreimage {
 impl Union<EnvelopeType> for HashIdPreimage {}
 
 impl ReadXdr for HashIdPreimage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: EnvelopeType = <EnvelopeType as ReadXdr>::read_xdr(r)?;
@@ -31355,7 +31138,7 @@ impl ReadXdr for HashIdPreimage {
 }
 
 impl WriteXdr for HashIdPreimage {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -31475,7 +31258,7 @@ impl From<MemoType> for i32 {
 }
 
 impl ReadXdr for MemoType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -31486,7 +31269,7 @@ impl ReadXdr for MemoType {
 }
 
 impl WriteXdr for MemoType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -31593,7 +31376,7 @@ impl Variants<MemoType> for Memo {
 impl Union<MemoType> for Memo {}
 
 impl ReadXdr for Memo {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: MemoType = <MemoType as ReadXdr>::read_xdr(r)?;
@@ -31613,7 +31396,7 @@ impl ReadXdr for Memo {
 }
 
 impl WriteXdr for Memo {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -31654,7 +31437,7 @@ pub struct TimeBounds {
 }
 
 impl ReadXdr for TimeBounds {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -31666,7 +31449,7 @@ impl ReadXdr for TimeBounds {
 }
 
 impl WriteXdr for TimeBounds {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.min_time.write_xdr(w)?;
@@ -31700,7 +31483,7 @@ pub struct LedgerBounds {
 }
 
 impl ReadXdr for LedgerBounds {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -31712,7 +31495,7 @@ impl ReadXdr for LedgerBounds {
 }
 
 impl WriteXdr for LedgerBounds {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.min_ledger.write_xdr(w)?;
@@ -31777,7 +31560,7 @@ pub struct PreconditionsV2 {
 }
 
 impl ReadXdr for PreconditionsV2 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -31793,7 +31576,7 @@ impl ReadXdr for PreconditionsV2 {
 }
 
 impl WriteXdr for PreconditionsV2 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.time_bounds.write_xdr(w)?;
@@ -31901,7 +31684,7 @@ impl From<PreconditionType> for i32 {
 }
 
 impl ReadXdr for PreconditionType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -31912,7 +31695,7 @@ impl ReadXdr for PreconditionType {
 }
 
 impl WriteXdr for PreconditionType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -32007,7 +31790,7 @@ impl Variants<PreconditionType> for Preconditions {
 impl Union<PreconditionType> for Preconditions {}
 
 impl ReadXdr for Preconditions {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: PreconditionType = <PreconditionType as ReadXdr>::read_xdr(r)?;
@@ -32025,7 +31808,7 @@ impl ReadXdr for Preconditions {
 }
 
 impl WriteXdr for Preconditions {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -32064,7 +31847,7 @@ pub struct LedgerFootprint {
 }
 
 impl ReadXdr for LedgerFootprint {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -32076,7 +31859,7 @@ impl ReadXdr for LedgerFootprint {
 }
 
 impl WriteXdr for LedgerFootprint {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.read_only.write_xdr(w)?;
@@ -32175,7 +31958,7 @@ impl From<ArchivalProofType> for i32 {
 }
 
 impl ReadXdr for ArchivalProofType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -32186,7 +31969,7 @@ impl ReadXdr for ArchivalProofType {
 }
 
 impl WriteXdr for ArchivalProofType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -32219,7 +32002,7 @@ pub struct ArchivalProofNode {
 }
 
 impl ReadXdr for ArchivalProofNode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -32231,7 +32014,7 @@ impl ReadXdr for ArchivalProofNode {
 }
 
 impl WriteXdr for ArchivalProofNode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.index.write_xdr(w)?;
@@ -32281,7 +32064,7 @@ impl AsRef<VecM<ArchivalProofNode>> for ProofLevel {
 }
 
 impl ReadXdr for ProofLevel {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = VecM::<ArchivalProofNode>::read_xdr(r)?;
@@ -32292,7 +32075,7 @@ impl ReadXdr for ProofLevel {
 }
 
 impl WriteXdr for ProofLevel {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -32374,7 +32157,7 @@ pub struct NonexistenceProofBody {
 }
 
 impl ReadXdr for NonexistenceProofBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -32386,7 +32169,7 @@ impl ReadXdr for NonexistenceProofBody {
 }
 
 impl WriteXdr for NonexistenceProofBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.entries_to_prove.write_xdr(w)?;
@@ -32430,7 +32213,7 @@ pub struct ExistenceProofBody {
 }
 
 impl ReadXdr for ExistenceProofBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -32444,7 +32227,7 @@ impl ReadXdr for ExistenceProofBody {
 }
 
 impl WriteXdr for ExistenceProofBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.keys_to_prove.write_xdr(w)?;
@@ -32536,7 +32319,7 @@ impl Variants<ArchivalProofType> for ArchivalProofBody {
 impl Union<ArchivalProofType> for ArchivalProofBody {}
 
 impl ReadXdr for ArchivalProofBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ArchivalProofType = <ArchivalProofType as ReadXdr>::read_xdr(r)?;
@@ -32557,7 +32340,7 @@ impl ReadXdr for ArchivalProofBody {
 }
 
 impl WriteXdr for ArchivalProofBody {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -32602,7 +32385,7 @@ pub struct ArchivalProof {
 }
 
 impl ReadXdr for ArchivalProof {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -32614,7 +32397,7 @@ impl ReadXdr for ArchivalProof {
 }
 
 impl WriteXdr for ArchivalProof {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.epoch.write_xdr(w)?;
@@ -32657,7 +32440,7 @@ pub struct SorobanResources {
 }
 
 impl ReadXdr for SorobanResources {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -32671,7 +32454,7 @@ impl ReadXdr for SorobanResources {
 }
 
 impl WriteXdr for SorobanResources {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.footprint.write_xdr(w)?;
@@ -32683,126 +32466,12 @@ impl WriteXdr for SorobanResources {
     }
 }
 
-/// SorobanTransactionDataExt is an XDR NestedUnion defines as:
-///
-/// ```text
-/// union switch (int v)
-///     {
-///     case 0:
-///         void;
-///     case 1:
-///         ArchivalProof proofs<>;
-///     }
-/// ```
-///
-// union with discriminant i32
-#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
-#[cfg_attr(
-    all(feature = "serde", feature = "alloc"),
-    derive(serde::Serialize, serde::Deserialize),
-    serde(rename_all = "snake_case")
-)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[allow(clippy::large_enum_variant)]
-pub enum SorobanTransactionDataExt {
-    V0,
-    V1(VecM<ArchivalProof>),
-}
-
-impl SorobanTransactionDataExt {
-    pub const VARIANTS: [i32; 2] = [0, 1];
-    pub const VARIANTS_STR: [&'static str; 2] = ["V0", "V1"];
-
-    #[must_use]
-    pub const fn name(&self) -> &'static str {
-        match self {
-            Self::V0 => "V0",
-            Self::V1(_) => "V1",
-        }
-    }
-
-    #[must_use]
-    pub const fn discriminant(&self) -> i32 {
-        #[allow(clippy::match_same_arms)]
-        match self {
-            Self::V0 => 0,
-            Self::V1(_) => 1,
-        }
-    }
-
-    #[must_use]
-    pub const fn variants() -> [i32; 2] {
-        Self::VARIANTS
-    }
-}
-
-impl Name for SorobanTransactionDataExt {
-    #[must_use]
-    fn name(&self) -> &'static str {
-        Self::name(self)
-    }
-}
-
-impl Discriminant<i32> for SorobanTransactionDataExt {
-    #[must_use]
-    fn discriminant(&self) -> i32 {
-        Self::discriminant(self)
-    }
-}
-
-impl Variants<i32> for SorobanTransactionDataExt {
-    fn variants() -> slice::Iter<'static, i32> {
-        Self::VARIANTS.iter()
-    }
-}
-
-impl Union<i32> for SorobanTransactionDataExt {}
-
-impl ReadXdr for SorobanTransactionDataExt {
-    #[cfg(feature = "std")]
-    fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
-        r.with_limited_depth(|r| {
-            let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
-            #[allow(clippy::match_same_arms, clippy::match_wildcard_for_single_variants)]
-            let v = match dv {
-                0 => Self::V0,
-                1 => Self::V1(VecM::<ArchivalProof>::read_xdr(r)?),
-                #[allow(unreachable_patterns)]
-                _ => return Err(Error::Invalid),
-            };
-            Ok(v)
-        })
-    }
-}
-
-impl WriteXdr for SorobanTransactionDataExt {
-    #[cfg(feature = "std")]
-    fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
-        w.with_limited_depth(|w| {
-            self.discriminant().write_xdr(w)?;
-            #[allow(clippy::match_same_arms)]
-            match self {
-                Self::V0 => ().write_xdr(w)?,
-                Self::V1(v) => v.write_xdr(w)?,
-            };
-            Ok(())
-        })
-    }
-}
-
 /// SorobanTransactionData is an XDR Struct defines as:
 ///
 /// ```text
 /// struct SorobanTransactionData
 /// {
-///     union switch (int v)
-///     {
-///     case 0:
-///         void;
-///     case 1:
-///         ArchivalProof proofs<>;
-///     } ext;
+///     ExtensionPoint ext;
 ///     SorobanResources resources;
 ///     // Amount of the transaction `fee` allocated to the Soroban resource fees.
 ///     // The fraction of `resourceFee` corresponding to `resources` specified
@@ -32826,17 +32495,17 @@ impl WriteXdr for SorobanTransactionDataExt {
 )]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SorobanTransactionData {
-    pub ext: SorobanTransactionDataExt,
+    pub ext: ExtensionPoint,
     pub resources: SorobanResources,
     pub resource_fee: i64,
 }
 
 impl ReadXdr for SorobanTransactionData {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
-                ext: SorobanTransactionDataExt::read_xdr(r)?,
+                ext: ExtensionPoint::read_xdr(r)?,
                 resources: SorobanResources::read_xdr(r)?,
                 resource_fee: i64::read_xdr(r)?,
             })
@@ -32845,7 +32514,7 @@ impl ReadXdr for SorobanTransactionData {
 }
 
 impl WriteXdr for SorobanTransactionData {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ext.write_xdr(w)?;
@@ -32928,7 +32597,7 @@ impl Variants<i32> for TransactionV0Ext {
 impl Union<i32> for TransactionV0Ext {}
 
 impl ReadXdr for TransactionV0Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -32944,7 +32613,7 @@ impl ReadXdr for TransactionV0Ext {
 }
 
 impl WriteXdr for TransactionV0Ext {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -32996,7 +32665,7 @@ pub struct TransactionV0 {
 }
 
 impl ReadXdr for TransactionV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -33013,7 +32682,7 @@ impl ReadXdr for TransactionV0 {
 }
 
 impl WriteXdr for TransactionV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.source_account_ed25519.write_xdr(w)?;
@@ -33054,7 +32723,7 @@ pub struct TransactionV0Envelope {
 }
 
 impl ReadXdr for TransactionV0Envelope {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -33066,7 +32735,7 @@ impl ReadXdr for TransactionV0Envelope {
 }
 
 impl WriteXdr for TransactionV0Envelope {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.tx.write_xdr(w)?;
@@ -33153,7 +32822,7 @@ impl Variants<i32> for TransactionExt {
 impl Union<i32> for TransactionExt {}
 
 impl ReadXdr for TransactionExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -33170,7 +32839,7 @@ impl ReadXdr for TransactionExt {
 }
 
 impl WriteXdr for TransactionExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -33236,7 +32905,7 @@ pub struct Transaction {
 }
 
 impl ReadXdr for Transaction {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -33253,7 +32922,7 @@ impl ReadXdr for Transaction {
 }
 
 impl WriteXdr for Transaction {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.source_account.write_xdr(w)?;
@@ -33294,7 +32963,7 @@ pub struct TransactionV1Envelope {
 }
 
 impl ReadXdr for TransactionV1Envelope {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -33306,7 +32975,7 @@ impl ReadXdr for TransactionV1Envelope {
 }
 
 impl WriteXdr for TransactionV1Envelope {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.tx.write_xdr(w)?;
@@ -33388,7 +33057,7 @@ impl Variants<EnvelopeType> for FeeBumpTransactionInnerTx {
 impl Union<EnvelopeType> for FeeBumpTransactionInnerTx {}
 
 impl ReadXdr for FeeBumpTransactionInnerTx {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: EnvelopeType = <EnvelopeType as ReadXdr>::read_xdr(r)?;
@@ -33404,7 +33073,7 @@ impl ReadXdr for FeeBumpTransactionInnerTx {
 }
 
 impl WriteXdr for FeeBumpTransactionInnerTx {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -33489,7 +33158,7 @@ impl Variants<i32> for FeeBumpTransactionExt {
 impl Union<i32> for FeeBumpTransactionExt {}
 
 impl ReadXdr for FeeBumpTransactionExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -33505,7 +33174,7 @@ impl ReadXdr for FeeBumpTransactionExt {
 }
 
 impl WriteXdr for FeeBumpTransactionExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -33556,7 +33225,7 @@ pub struct FeeBumpTransaction {
 }
 
 impl ReadXdr for FeeBumpTransaction {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -33570,7 +33239,7 @@ impl ReadXdr for FeeBumpTransaction {
 }
 
 impl WriteXdr for FeeBumpTransaction {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.fee_source.write_xdr(w)?;
@@ -33608,7 +33277,7 @@ pub struct FeeBumpTransactionEnvelope {
 }
 
 impl ReadXdr for FeeBumpTransactionEnvelope {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -33620,7 +33289,7 @@ impl ReadXdr for FeeBumpTransactionEnvelope {
 }
 
 impl WriteXdr for FeeBumpTransactionEnvelope {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.tx.write_xdr(w)?;
@@ -33716,7 +33385,7 @@ impl Variants<EnvelopeType> for TransactionEnvelope {
 impl Union<EnvelopeType> for TransactionEnvelope {}
 
 impl ReadXdr for TransactionEnvelope {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: EnvelopeType = <EnvelopeType as ReadXdr>::read_xdr(r)?;
@@ -33736,7 +33405,7 @@ impl ReadXdr for TransactionEnvelope {
 }
 
 impl WriteXdr for TransactionEnvelope {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -33829,7 +33498,7 @@ impl Variants<EnvelopeType> for TransactionSignaturePayloadTaggedTransaction {
 impl Union<EnvelopeType> for TransactionSignaturePayloadTaggedTransaction {}
 
 impl ReadXdr for TransactionSignaturePayloadTaggedTransaction {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: EnvelopeType = <EnvelopeType as ReadXdr>::read_xdr(r)?;
@@ -33846,7 +33515,7 @@ impl ReadXdr for TransactionSignaturePayloadTaggedTransaction {
 }
 
 impl WriteXdr for TransactionSignaturePayloadTaggedTransaction {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -33892,7 +33561,7 @@ pub struct TransactionSignaturePayload {
 }
 
 impl ReadXdr for TransactionSignaturePayload {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -33904,7 +33573,7 @@ impl ReadXdr for TransactionSignaturePayload {
 }
 
 impl WriteXdr for TransactionSignaturePayload {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.network_id.write_xdr(w)?;
@@ -34008,7 +33677,7 @@ impl From<ClaimAtomType> for i32 {
 }
 
 impl ReadXdr for ClaimAtomType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -34019,7 +33688,7 @@ impl ReadXdr for ClaimAtomType {
 }
 
 impl WriteXdr for ClaimAtomType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -34065,7 +33734,7 @@ pub struct ClaimOfferAtomV0 {
 }
 
 impl ReadXdr for ClaimOfferAtomV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -34081,7 +33750,7 @@ impl ReadXdr for ClaimOfferAtomV0 {
 }
 
 impl WriteXdr for ClaimOfferAtomV0 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.seller_ed25519.write_xdr(w)?;
@@ -34132,7 +33801,7 @@ pub struct ClaimOfferAtom {
 }
 
 impl ReadXdr for ClaimOfferAtom {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -34148,7 +33817,7 @@ impl ReadXdr for ClaimOfferAtom {
 }
 
 impl WriteXdr for ClaimOfferAtom {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.seller_id.write_xdr(w)?;
@@ -34196,7 +33865,7 @@ pub struct ClaimLiquidityAtom {
 }
 
 impl ReadXdr for ClaimLiquidityAtom {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -34211,7 +33880,7 @@ impl ReadXdr for ClaimLiquidityAtom {
 }
 
 impl WriteXdr for ClaimLiquidityAtom {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.liquidity_pool_id.write_xdr(w)?;
@@ -34310,7 +33979,7 @@ impl Variants<ClaimAtomType> for ClaimAtom {
 impl Union<ClaimAtomType> for ClaimAtom {}
 
 impl ReadXdr for ClaimAtom {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ClaimAtomType = <ClaimAtomType as ReadXdr>::read_xdr(r)?;
@@ -34330,7 +33999,7 @@ impl ReadXdr for ClaimAtom {
 }
 
 impl WriteXdr for ClaimAtom {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -34459,7 +34128,7 @@ impl From<CreateAccountResultCode> for i32 {
 }
 
 impl ReadXdr for CreateAccountResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -34470,7 +34139,7 @@ impl ReadXdr for CreateAccountResultCode {
 }
 
 impl WriteXdr for CreateAccountResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -34580,7 +34249,7 @@ impl Variants<CreateAccountResultCode> for CreateAccountResult {
 impl Union<CreateAccountResultCode> for CreateAccountResult {}
 
 impl ReadXdr for CreateAccountResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: CreateAccountResultCode = <CreateAccountResultCode as ReadXdr>::read_xdr(r)?;
@@ -34600,7 +34269,7 @@ impl ReadXdr for CreateAccountResult {
 }
 
 impl WriteXdr for CreateAccountResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -34760,7 +34429,7 @@ impl From<PaymentResultCode> for i32 {
 }
 
 impl ReadXdr for PaymentResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -34771,7 +34440,7 @@ impl ReadXdr for PaymentResultCode {
 }
 
 impl WriteXdr for PaymentResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -34911,7 +34580,7 @@ impl Variants<PaymentResultCode> for PaymentResult {
 impl Union<PaymentResultCode> for PaymentResult {}
 
 impl ReadXdr for PaymentResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: PaymentResultCode = <PaymentResultCode as ReadXdr>::read_xdr(r)?;
@@ -34936,7 +34605,7 @@ impl ReadXdr for PaymentResult {
 }
 
 impl WriteXdr for PaymentResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -35128,7 +34797,7 @@ impl From<PathPaymentStrictReceiveResultCode> for i32 {
 }
 
 impl ReadXdr for PathPaymentStrictReceiveResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -35139,7 +34808,7 @@ impl ReadXdr for PathPaymentStrictReceiveResultCode {
 }
 
 impl WriteXdr for PathPaymentStrictReceiveResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -35174,7 +34843,7 @@ pub struct SimplePaymentResult {
 }
 
 impl ReadXdr for SimplePaymentResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -35187,7 +34856,7 @@ impl ReadXdr for SimplePaymentResult {
 }
 
 impl WriteXdr for SimplePaymentResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.destination.write_xdr(w)?;
@@ -35222,7 +34891,7 @@ pub struct PathPaymentStrictReceiveResultSuccess {
 }
 
 impl ReadXdr for PathPaymentStrictReceiveResultSuccess {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -35234,7 +34903,7 @@ impl ReadXdr for PathPaymentStrictReceiveResultSuccess {
 }
 
 impl WriteXdr for PathPaymentStrictReceiveResultSuccess {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.offers.write_xdr(w)?;
@@ -35400,7 +35069,7 @@ impl Variants<PathPaymentStrictReceiveResultCode> for PathPaymentStrictReceiveRe
 impl Union<PathPaymentStrictReceiveResultCode> for PathPaymentStrictReceiveResult {}
 
 impl ReadXdr for PathPaymentStrictReceiveResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: PathPaymentStrictReceiveResultCode =
@@ -35431,7 +35100,7 @@ impl ReadXdr for PathPaymentStrictReceiveResult {
 }
 
 impl WriteXdr for PathPaymentStrictReceiveResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -35625,7 +35294,7 @@ impl From<PathPaymentStrictSendResultCode> for i32 {
 }
 
 impl ReadXdr for PathPaymentStrictSendResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -35636,7 +35305,7 @@ impl ReadXdr for PathPaymentStrictSendResultCode {
 }
 
 impl WriteXdr for PathPaymentStrictSendResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -35669,7 +35338,7 @@ pub struct PathPaymentStrictSendResultSuccess {
 }
 
 impl ReadXdr for PathPaymentStrictSendResultSuccess {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -35681,7 +35350,7 @@ impl ReadXdr for PathPaymentStrictSendResultSuccess {
 }
 
 impl WriteXdr for PathPaymentStrictSendResultSuccess {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.offers.write_xdr(w)?;
@@ -35846,7 +35515,7 @@ impl Variants<PathPaymentStrictSendResultCode> for PathPaymentStrictSendResult {
 impl Union<PathPaymentStrictSendResultCode> for PathPaymentStrictSendResult {}
 
 impl ReadXdr for PathPaymentStrictSendResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: PathPaymentStrictSendResultCode =
@@ -35877,7 +35546,7 @@ impl ReadXdr for PathPaymentStrictSendResult {
 }
 
 impl WriteXdr for PathPaymentStrictSendResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -36070,7 +35739,7 @@ impl From<ManageSellOfferResultCode> for i32 {
 }
 
 impl ReadXdr for ManageSellOfferResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -36081,7 +35750,7 @@ impl ReadXdr for ManageSellOfferResultCode {
 }
 
 impl WriteXdr for ManageSellOfferResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -36184,7 +35853,7 @@ impl From<ManageOfferEffect> for i32 {
 }
 
 impl ReadXdr for ManageOfferEffect {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -36195,7 +35864,7 @@ impl ReadXdr for ManageOfferEffect {
 }
 
 impl WriteXdr for ManageOfferEffect {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -36289,7 +35958,7 @@ impl Variants<ManageOfferEffect> for ManageOfferSuccessResultOffer {
 impl Union<ManageOfferEffect> for ManageOfferSuccessResultOffer {}
 
 impl ReadXdr for ManageOfferSuccessResultOffer {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ManageOfferEffect = <ManageOfferEffect as ReadXdr>::read_xdr(r)?;
@@ -36307,7 +35976,7 @@ impl ReadXdr for ManageOfferSuccessResultOffer {
 }
 
 impl WriteXdr for ManageOfferSuccessResultOffer {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -36356,7 +36025,7 @@ pub struct ManageOfferSuccessResult {
 }
 
 impl ReadXdr for ManageOfferSuccessResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -36368,7 +36037,7 @@ impl ReadXdr for ManageOfferSuccessResult {
 }
 
 impl WriteXdr for ManageOfferSuccessResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.offers_claimed.write_xdr(w)?;
@@ -36527,7 +36196,7 @@ impl Variants<ManageSellOfferResultCode> for ManageSellOfferResult {
 impl Union<ManageSellOfferResultCode> for ManageSellOfferResult {}
 
 impl ReadXdr for ManageSellOfferResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ManageSellOfferResultCode =
@@ -36558,7 +36227,7 @@ impl ReadXdr for ManageSellOfferResult {
 }
 
 impl WriteXdr for ManageSellOfferResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -36748,7 +36417,7 @@ impl From<ManageBuyOfferResultCode> for i32 {
 }
 
 impl ReadXdr for ManageBuyOfferResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -36759,7 +36428,7 @@ impl ReadXdr for ManageBuyOfferResultCode {
 }
 
 impl WriteXdr for ManageBuyOfferResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -36917,7 +36586,7 @@ impl Variants<ManageBuyOfferResultCode> for ManageBuyOfferResult {
 impl Union<ManageBuyOfferResultCode> for ManageBuyOfferResult {}
 
 impl ReadXdr for ManageBuyOfferResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ManageBuyOfferResultCode = <ManageBuyOfferResultCode as ReadXdr>::read_xdr(r)?;
@@ -36947,7 +36616,7 @@ impl ReadXdr for ManageBuyOfferResult {
 }
 
 impl WriteXdr for ManageBuyOfferResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -37121,7 +36790,7 @@ impl From<SetOptionsResultCode> for i32 {
 }
 
 impl ReadXdr for SetOptionsResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -37132,7 +36801,7 @@ impl ReadXdr for SetOptionsResultCode {
 }
 
 impl WriteXdr for SetOptionsResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -37278,7 +36947,7 @@ impl Variants<SetOptionsResultCode> for SetOptionsResult {
 impl Union<SetOptionsResultCode> for SetOptionsResult {}
 
 impl ReadXdr for SetOptionsResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: SetOptionsResultCode = <SetOptionsResultCode as ReadXdr>::read_xdr(r)?;
@@ -37304,7 +36973,7 @@ impl ReadXdr for SetOptionsResult {
 }
 
 impl WriteXdr for SetOptionsResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -37467,7 +37136,7 @@ impl From<ChangeTrustResultCode> for i32 {
 }
 
 impl ReadXdr for ChangeTrustResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -37478,7 +37147,7 @@ impl ReadXdr for ChangeTrustResultCode {
 }
 
 impl WriteXdr for ChangeTrustResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -37612,7 +37281,7 @@ impl Variants<ChangeTrustResultCode> for ChangeTrustResult {
 impl Union<ChangeTrustResultCode> for ChangeTrustResult {}
 
 impl ReadXdr for ChangeTrustResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ChangeTrustResultCode = <ChangeTrustResultCode as ReadXdr>::read_xdr(r)?;
@@ -37638,7 +37307,7 @@ impl ReadXdr for ChangeTrustResult {
 }
 
 impl WriteXdr for ChangeTrustResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -37785,7 +37454,7 @@ impl From<AllowTrustResultCode> for i32 {
 }
 
 impl ReadXdr for AllowTrustResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -37796,7 +37465,7 @@ impl ReadXdr for AllowTrustResultCode {
 }
 
 impl WriteXdr for AllowTrustResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -37918,7 +37587,7 @@ impl Variants<AllowTrustResultCode> for AllowTrustResult {
 impl Union<AllowTrustResultCode> for AllowTrustResult {}
 
 impl ReadXdr for AllowTrustResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: AllowTrustResultCode = <AllowTrustResultCode as ReadXdr>::read_xdr(r)?;
@@ -37940,7 +37609,7 @@ impl ReadXdr for AllowTrustResult {
 }
 
 impl WriteXdr for AllowTrustResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -38090,7 +37759,7 @@ impl From<AccountMergeResultCode> for i32 {
 }
 
 impl ReadXdr for AccountMergeResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -38101,7 +37770,7 @@ impl ReadXdr for AccountMergeResultCode {
 }
 
 impl WriteXdr for AccountMergeResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -38229,7 +37898,7 @@ impl Variants<AccountMergeResultCode> for AccountMergeResult {
 impl Union<AccountMergeResultCode> for AccountMergeResult {}
 
 impl ReadXdr for AccountMergeResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: AccountMergeResultCode = <AccountMergeResultCode as ReadXdr>::read_xdr(r)?;
@@ -38252,7 +37921,7 @@ impl ReadXdr for AccountMergeResult {
 }
 
 impl WriteXdr for AccountMergeResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -38361,7 +38030,7 @@ impl From<InflationResultCode> for i32 {
 }
 
 impl ReadXdr for InflationResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -38372,7 +38041,7 @@ impl ReadXdr for InflationResultCode {
 }
 
 impl WriteXdr for InflationResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -38405,7 +38074,7 @@ pub struct InflationPayout {
 }
 
 impl ReadXdr for InflationPayout {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -38417,7 +38086,7 @@ impl ReadXdr for InflationPayout {
 }
 
 impl WriteXdr for InflationPayout {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.destination.write_xdr(w)?;
@@ -38505,7 +38174,7 @@ impl Variants<InflationResultCode> for InflationResult {
 impl Union<InflationResultCode> for InflationResult {}
 
 impl ReadXdr for InflationResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: InflationResultCode = <InflationResultCode as ReadXdr>::read_xdr(r)?;
@@ -38524,7 +38193,7 @@ impl ReadXdr for InflationResult {
 }
 
 impl WriteXdr for InflationResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -38652,7 +38321,7 @@ impl From<ManageDataResultCode> for i32 {
 }
 
 impl ReadXdr for ManageDataResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -38663,7 +38332,7 @@ impl ReadXdr for ManageDataResultCode {
 }
 
 impl WriteXdr for ManageDataResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -38773,7 +38442,7 @@ impl Variants<ManageDataResultCode> for ManageDataResult {
 impl Union<ManageDataResultCode> for ManageDataResult {}
 
 impl ReadXdr for ManageDataResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ManageDataResultCode = <ManageDataResultCode as ReadXdr>::read_xdr(r)?;
@@ -38793,7 +38462,7 @@ impl ReadXdr for ManageDataResult {
 }
 
 impl WriteXdr for ManageDataResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -38901,7 +38570,7 @@ impl From<BumpSequenceResultCode> for i32 {
 }
 
 impl ReadXdr for BumpSequenceResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -38912,7 +38581,7 @@ impl ReadXdr for BumpSequenceResultCode {
 }
 
 impl WriteXdr for BumpSequenceResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -39001,7 +38670,7 @@ impl Variants<BumpSequenceResultCode> for BumpSequenceResult {
 impl Union<BumpSequenceResultCode> for BumpSequenceResult {}
 
 impl ReadXdr for BumpSequenceResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: BumpSequenceResultCode = <BumpSequenceResultCode as ReadXdr>::read_xdr(r)?;
@@ -39018,7 +38687,7 @@ impl ReadXdr for BumpSequenceResult {
 }
 
 impl WriteXdr for BumpSequenceResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -39148,7 +38817,7 @@ impl From<CreateClaimableBalanceResultCode> for i32 {
 }
 
 impl ReadXdr for CreateClaimableBalanceResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -39159,7 +38828,7 @@ impl ReadXdr for CreateClaimableBalanceResultCode {
 }
 
 impl WriteXdr for CreateClaimableBalanceResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -39276,7 +38945,7 @@ impl Variants<CreateClaimableBalanceResultCode> for CreateClaimableBalanceResult
 impl Union<CreateClaimableBalanceResultCode> for CreateClaimableBalanceResult {}
 
 impl ReadXdr for CreateClaimableBalanceResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: CreateClaimableBalanceResultCode =
@@ -39300,7 +38969,7 @@ impl ReadXdr for CreateClaimableBalanceResult {
 }
 
 impl WriteXdr for CreateClaimableBalanceResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -39434,7 +39103,7 @@ impl From<ClaimClaimableBalanceResultCode> for i32 {
 }
 
 impl ReadXdr for ClaimClaimableBalanceResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -39445,7 +39114,7 @@ impl ReadXdr for ClaimClaimableBalanceResultCode {
 }
 
 impl WriteXdr for ClaimClaimableBalanceResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -39561,7 +39230,7 @@ impl Variants<ClaimClaimableBalanceResultCode> for ClaimClaimableBalanceResult {
 impl Union<ClaimClaimableBalanceResultCode> for ClaimClaimableBalanceResult {}
 
 impl ReadXdr for ClaimClaimableBalanceResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ClaimClaimableBalanceResultCode =
@@ -39583,7 +39252,7 @@ impl ReadXdr for ClaimClaimableBalanceResult {
 }
 
 impl WriteXdr for ClaimClaimableBalanceResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -39704,7 +39373,7 @@ impl From<BeginSponsoringFutureReservesResultCode> for i32 {
 }
 
 impl ReadXdr for BeginSponsoringFutureReservesResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -39715,7 +39384,7 @@ impl ReadXdr for BeginSponsoringFutureReservesResultCode {
 }
 
 impl WriteXdr for BeginSponsoringFutureReservesResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -39816,7 +39485,7 @@ impl Variants<BeginSponsoringFutureReservesResultCode> for BeginSponsoringFuture
 impl Union<BeginSponsoringFutureReservesResultCode> for BeginSponsoringFutureReservesResult {}
 
 impl ReadXdr for BeginSponsoringFutureReservesResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: BeginSponsoringFutureReservesResultCode =
@@ -39836,7 +39505,7 @@ impl ReadXdr for BeginSponsoringFutureReservesResult {
 }
 
 impl WriteXdr for BeginSponsoringFutureReservesResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -39944,7 +39613,7 @@ impl From<EndSponsoringFutureReservesResultCode> for i32 {
 }
 
 impl ReadXdr for EndSponsoringFutureReservesResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -39955,7 +39624,7 @@ impl ReadXdr for EndSponsoringFutureReservesResultCode {
 }
 
 impl WriteXdr for EndSponsoringFutureReservesResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -40045,7 +39714,7 @@ impl Variants<EndSponsoringFutureReservesResultCode> for EndSponsoringFutureRese
 impl Union<EndSponsoringFutureReservesResultCode> for EndSponsoringFutureReservesResult {}
 
 impl ReadXdr for EndSponsoringFutureReservesResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: EndSponsoringFutureReservesResultCode =
@@ -40063,7 +39732,7 @@ impl ReadXdr for EndSponsoringFutureReservesResult {
 }
 
 impl WriteXdr for EndSponsoringFutureReservesResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -40196,7 +39865,7 @@ impl From<RevokeSponsorshipResultCode> for i32 {
 }
 
 impl ReadXdr for RevokeSponsorshipResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -40207,7 +39876,7 @@ impl ReadXdr for RevokeSponsorshipResultCode {
 }
 
 impl WriteXdr for RevokeSponsorshipResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -40323,7 +39992,7 @@ impl Variants<RevokeSponsorshipResultCode> for RevokeSponsorshipResult {
 impl Union<RevokeSponsorshipResultCode> for RevokeSponsorshipResult {}
 
 impl ReadXdr for RevokeSponsorshipResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: RevokeSponsorshipResultCode =
@@ -40345,7 +40014,7 @@ impl ReadXdr for RevokeSponsorshipResult {
 }
 
 impl WriteXdr for RevokeSponsorshipResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -40476,7 +40145,7 @@ impl From<ClawbackResultCode> for i32 {
 }
 
 impl ReadXdr for ClawbackResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -40487,7 +40156,7 @@ impl ReadXdr for ClawbackResultCode {
 }
 
 impl WriteXdr for ClawbackResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -40597,7 +40266,7 @@ impl Variants<ClawbackResultCode> for ClawbackResult {
 impl Union<ClawbackResultCode> for ClawbackResult {}
 
 impl ReadXdr for ClawbackResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ClawbackResultCode = <ClawbackResultCode as ReadXdr>::read_xdr(r)?;
@@ -40617,7 +40286,7 @@ impl ReadXdr for ClawbackResult {
 }
 
 impl WriteXdr for ClawbackResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -40737,7 +40406,7 @@ impl From<ClawbackClaimableBalanceResultCode> for i32 {
 }
 
 impl ReadXdr for ClawbackClaimableBalanceResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -40748,7 +40417,7 @@ impl ReadXdr for ClawbackClaimableBalanceResultCode {
 }
 
 impl WriteXdr for ClawbackClaimableBalanceResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -40849,7 +40518,7 @@ impl Variants<ClawbackClaimableBalanceResultCode> for ClawbackClaimableBalanceRe
 impl Union<ClawbackClaimableBalanceResultCode> for ClawbackClaimableBalanceResult {}
 
 impl ReadXdr for ClawbackClaimableBalanceResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ClawbackClaimableBalanceResultCode =
@@ -40869,7 +40538,7 @@ impl ReadXdr for ClawbackClaimableBalanceResult {
 }
 
 impl WriteXdr for ClawbackClaimableBalanceResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -41005,7 +40674,7 @@ impl From<SetTrustLineFlagsResultCode> for i32 {
 }
 
 impl ReadXdr for SetTrustLineFlagsResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -41016,7 +40685,7 @@ impl ReadXdr for SetTrustLineFlagsResultCode {
 }
 
 impl WriteXdr for SetTrustLineFlagsResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -41132,7 +40801,7 @@ impl Variants<SetTrustLineFlagsResultCode> for SetTrustLineFlagsResult {
 impl Union<SetTrustLineFlagsResultCode> for SetTrustLineFlagsResult {}
 
 impl ReadXdr for SetTrustLineFlagsResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: SetTrustLineFlagsResultCode =
@@ -41154,7 +40823,7 @@ impl ReadXdr for SetTrustLineFlagsResult {
 }
 
 impl WriteXdr for SetTrustLineFlagsResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -41307,7 +40976,7 @@ impl From<LiquidityPoolDepositResultCode> for i32 {
 }
 
 impl ReadXdr for LiquidityPoolDepositResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -41318,7 +40987,7 @@ impl ReadXdr for LiquidityPoolDepositResultCode {
 }
 
 impl WriteXdr for LiquidityPoolDepositResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -41446,7 +41115,7 @@ impl Variants<LiquidityPoolDepositResultCode> for LiquidityPoolDepositResult {
 impl Union<LiquidityPoolDepositResultCode> for LiquidityPoolDepositResult {}
 
 impl ReadXdr for LiquidityPoolDepositResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: LiquidityPoolDepositResultCode =
@@ -41470,7 +41139,7 @@ impl ReadXdr for LiquidityPoolDepositResult {
 }
 
 impl WriteXdr for LiquidityPoolDepositResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -41612,7 +41281,7 @@ impl From<LiquidityPoolWithdrawResultCode> for i32 {
 }
 
 impl ReadXdr for LiquidityPoolWithdrawResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -41623,7 +41292,7 @@ impl ReadXdr for LiquidityPoolWithdrawResultCode {
 }
 
 impl WriteXdr for LiquidityPoolWithdrawResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -41739,7 +41408,7 @@ impl Variants<LiquidityPoolWithdrawResultCode> for LiquidityPoolWithdrawResult {
 impl Union<LiquidityPoolWithdrawResultCode> for LiquidityPoolWithdrawResult {}
 
 impl ReadXdr for LiquidityPoolWithdrawResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: LiquidityPoolWithdrawResultCode =
@@ -41761,7 +41430,7 @@ impl ReadXdr for LiquidityPoolWithdrawResult {
 }
 
 impl WriteXdr for LiquidityPoolWithdrawResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -41898,7 +41567,7 @@ impl From<InvokeHostFunctionResultCode> for i32 {
 }
 
 impl ReadXdr for InvokeHostFunctionResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -41909,7 +41578,7 @@ impl ReadXdr for InvokeHostFunctionResultCode {
 }
 
 impl WriteXdr for InvokeHostFunctionResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -42027,7 +41696,7 @@ impl Variants<InvokeHostFunctionResultCode> for InvokeHostFunctionResult {
 impl Union<InvokeHostFunctionResultCode> for InvokeHostFunctionResult {}
 
 impl ReadXdr for InvokeHostFunctionResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: InvokeHostFunctionResultCode =
@@ -42051,7 +41720,7 @@ impl ReadXdr for InvokeHostFunctionResult {
 }
 
 impl WriteXdr for InvokeHostFunctionResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -42176,7 +41845,7 @@ impl From<ExtendFootprintTtlResultCode> for i32 {
 }
 
 impl ReadXdr for ExtendFootprintTtlResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -42187,7 +41856,7 @@ impl ReadXdr for ExtendFootprintTtlResultCode {
 }
 
 impl WriteXdr for ExtendFootprintTtlResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -42293,7 +41962,7 @@ impl Variants<ExtendFootprintTtlResultCode> for ExtendFootprintTtlResult {
 impl Union<ExtendFootprintTtlResultCode> for ExtendFootprintTtlResult {}
 
 impl ReadXdr for ExtendFootprintTtlResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: ExtendFootprintTtlResultCode =
@@ -42315,7 +41984,7 @@ impl ReadXdr for ExtendFootprintTtlResult {
 }
 
 impl WriteXdr for ExtendFootprintTtlResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -42438,7 +42107,7 @@ impl From<RestoreFootprintResultCode> for i32 {
 }
 
 impl ReadXdr for RestoreFootprintResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -42449,7 +42118,7 @@ impl ReadXdr for RestoreFootprintResultCode {
 }
 
 impl WriteXdr for RestoreFootprintResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -42555,7 +42224,7 @@ impl Variants<RestoreFootprintResultCode> for RestoreFootprintResult {
 impl Union<RestoreFootprintResultCode> for RestoreFootprintResult {}
 
 impl ReadXdr for RestoreFootprintResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: RestoreFootprintResultCode =
@@ -42577,7 +42246,7 @@ impl ReadXdr for RestoreFootprintResult {
 }
 
 impl WriteXdr for RestoreFootprintResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -42716,7 +42385,7 @@ impl From<OperationResultCode> for i32 {
 }
 
 impl ReadXdr for OperationResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -42727,7 +42396,7 @@ impl ReadXdr for OperationResultCode {
 }
 
 impl WriteXdr for OperationResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -42994,7 +42663,7 @@ impl Variants<OperationType> for OperationResultTr {
 impl Union<OperationType> for OperationResultTr {}
 
 impl ReadXdr for OperationResultTr {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: OperationType = <OperationType as ReadXdr>::read_xdr(r)?;
@@ -43074,7 +42743,7 @@ impl ReadXdr for OperationResultTr {
 }
 
 impl WriteXdr for OperationResultTr {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -43283,7 +42952,7 @@ impl Variants<OperationResultCode> for OperationResult {
 impl Union<OperationResultCode> for OperationResult {}
 
 impl ReadXdr for OperationResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: OperationResultCode = <OperationResultCode as ReadXdr>::read_xdr(r)?;
@@ -43305,7 +42974,7 @@ impl ReadXdr for OperationResult {
 }
 
 impl WriteXdr for OperationResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -43522,7 +43191,7 @@ impl From<TransactionResultCode> for i32 {
 }
 
 impl ReadXdr for TransactionResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -43533,7 +43202,7 @@ impl ReadXdr for TransactionResultCode {
 }
 
 impl WriteXdr for TransactionResultCode {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -43717,7 +43386,7 @@ impl Variants<TransactionResultCode> for InnerTransactionResultResult {
 impl Union<TransactionResultCode> for InnerTransactionResultResult {}
 
 impl ReadXdr for InnerTransactionResultResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: TransactionResultCode = <TransactionResultCode as ReadXdr>::read_xdr(r)?;
@@ -43753,7 +43422,7 @@ impl ReadXdr for InnerTransactionResultResult {
 }
 
 impl WriteXdr for InnerTransactionResultResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -43854,7 +43523,7 @@ impl Variants<i32> for InnerTransactionResultExt {
 impl Union<i32> for InnerTransactionResultExt {}
 
 impl ReadXdr for InnerTransactionResultExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -43870,7 +43539,7 @@ impl ReadXdr for InnerTransactionResultExt {
 }
 
 impl WriteXdr for InnerTransactionResultExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -43942,7 +43611,7 @@ pub struct InnerTransactionResult {
 }
 
 impl ReadXdr for InnerTransactionResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -43955,7 +43624,7 @@ impl ReadXdr for InnerTransactionResult {
 }
 
 impl WriteXdr for InnerTransactionResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.fee_charged.write_xdr(w)?;
@@ -43990,7 +43659,7 @@ pub struct InnerTransactionResultPair {
 }
 
 impl ReadXdr for InnerTransactionResultPair {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -44002,7 +43671,7 @@ impl ReadXdr for InnerTransactionResultPair {
 }
 
 impl WriteXdr for InnerTransactionResultPair {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.transaction_hash.write_xdr(w)?;
@@ -44199,7 +43868,7 @@ impl Variants<TransactionResultCode> for TransactionResultResult {
 impl Union<TransactionResultCode> for TransactionResultResult {}
 
 impl ReadXdr for TransactionResultResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: TransactionResultCode = <TransactionResultCode as ReadXdr>::read_xdr(r)?;
@@ -44241,7 +43910,7 @@ impl ReadXdr for TransactionResultResult {
 }
 
 impl WriteXdr for TransactionResultResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -44344,7 +44013,7 @@ impl Variants<i32> for TransactionResultExt {
 impl Union<i32> for TransactionResultExt {}
 
 impl ReadXdr for TransactionResultExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -44360,7 +44029,7 @@ impl ReadXdr for TransactionResultExt {
 }
 
 impl WriteXdr for TransactionResultExt {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -44433,7 +44102,7 @@ pub struct TransactionResult {
 }
 
 impl ReadXdr for TransactionResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -44446,7 +44115,7 @@ impl ReadXdr for TransactionResult {
 }
 
 impl WriteXdr for TransactionResult {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.fee_charged.write_xdr(w)?;
@@ -44554,7 +44223,7 @@ impl AsRef<[u8; 32]> for Hash {
 }
 
 impl ReadXdr for Hash {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = <[u8; 32]>::read_xdr(r)?;
@@ -44565,7 +44234,7 @@ impl ReadXdr for Hash {
 }
 
 impl WriteXdr for Hash {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -44705,7 +44374,7 @@ impl AsRef<[u8; 32]> for Uint256 {
 }
 
 impl ReadXdr for Uint256 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = <[u8; 32]>::read_xdr(r)?;
@@ -44716,7 +44385,7 @@ impl ReadXdr for Uint256 {
 }
 
 impl WriteXdr for Uint256 {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -44830,7 +44499,7 @@ impl AsRef<u64> for TimePoint {
 }
 
 impl ReadXdr for TimePoint {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = u64::read_xdr(r)?;
@@ -44841,7 +44510,7 @@ impl ReadXdr for TimePoint {
 }
 
 impl WriteXdr for TimePoint {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -44886,7 +44555,7 @@ impl AsRef<u64> for Duration {
 }
 
 impl ReadXdr for Duration {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = u64::read_xdr(r)?;
@@ -44897,7 +44566,7 @@ impl ReadXdr for Duration {
 }
 
 impl WriteXdr for Duration {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -44975,7 +44644,7 @@ impl Variants<i32> for ExtensionPoint {
 impl Union<i32> for ExtensionPoint {}
 
 impl ReadXdr for ExtensionPoint {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: i32 = <i32 as ReadXdr>::read_xdr(r)?;
@@ -44991,7 +44660,7 @@ impl ReadXdr for ExtensionPoint {
 }
 
 impl WriteXdr for ExtensionPoint {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -45116,7 +44785,7 @@ impl From<CryptoKeyType> for i32 {
 }
 
 impl ReadXdr for CryptoKeyType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -45127,7 +44796,7 @@ impl ReadXdr for CryptoKeyType {
 }
 
 impl WriteXdr for CryptoKeyType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -45218,7 +44887,7 @@ impl From<PublicKeyType> for i32 {
 }
 
 impl ReadXdr for PublicKeyType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -45229,7 +44898,7 @@ impl ReadXdr for PublicKeyType {
 }
 
 impl WriteXdr for PublicKeyType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -45338,7 +45007,7 @@ impl From<SignerKeyType> for i32 {
 }
 
 impl ReadXdr for SignerKeyType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -45349,7 +45018,7 @@ impl ReadXdr for SignerKeyType {
 }
 
 impl WriteXdr for SignerKeyType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -45428,7 +45097,7 @@ impl Variants<PublicKeyType> for PublicKey {
 impl Union<PublicKeyType> for PublicKey {}
 
 impl ReadXdr for PublicKey {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: PublicKeyType = <PublicKeyType as ReadXdr>::read_xdr(r)?;
@@ -45446,7 +45115,7 @@ impl ReadXdr for PublicKey {
 }
 
 impl WriteXdr for PublicKey {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -45483,7 +45152,7 @@ pub struct SignerKeyEd25519SignedPayload {
 }
 
 impl ReadXdr for SignerKeyEd25519SignedPayload {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -45495,7 +45164,7 @@ impl ReadXdr for SignerKeyEd25519SignedPayload {
 }
 
 impl WriteXdr for SignerKeyEd25519SignedPayload {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.ed25519.write_xdr(w)?;
@@ -45604,7 +45273,7 @@ impl Variants<SignerKeyType> for SignerKey {
 impl Union<SignerKeyType> for SignerKey {}
 
 impl ReadXdr for SignerKey {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let dv: SignerKeyType = <SignerKeyType as ReadXdr>::read_xdr(r)?;
@@ -45625,7 +45294,7 @@ impl ReadXdr for SignerKey {
 }
 
 impl WriteXdr for SignerKey {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.discriminant().write_xdr(w)?;
@@ -45681,7 +45350,7 @@ impl AsRef<BytesM<64>> for Signature {
 }
 
 impl ReadXdr for Signature {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = BytesM::<64>::read_xdr(r)?;
@@ -45692,7 +45361,7 @@ impl ReadXdr for Signature {
 }
 
 impl WriteXdr for Signature {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -45844,7 +45513,7 @@ impl AsRef<[u8; 4]> for SignatureHint {
 }
 
 impl ReadXdr for SignatureHint {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = <[u8; 4]>::read_xdr(r)?;
@@ -45855,7 +45524,7 @@ impl ReadXdr for SignatureHint {
 }
 
 impl WriteXdr for SignatureHint {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -45935,7 +45604,7 @@ impl AsRef<PublicKey> for NodeId {
 }
 
 impl ReadXdr for NodeId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = PublicKey::read_xdr(r)?;
@@ -45946,7 +45615,7 @@ impl ReadXdr for NodeId {
 }
 
 impl WriteXdr for NodeId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -45989,7 +45658,7 @@ impl AsRef<PublicKey> for AccountId {
 }
 
 impl ReadXdr for AccountId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let i = PublicKey::read_xdr(r)?;
@@ -46000,7 +45669,7 @@ impl ReadXdr for AccountId {
 }
 
 impl WriteXdr for AccountId {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| self.0.write_xdr(w))
     }
@@ -46028,7 +45697,7 @@ pub struct Curve25519Secret {
 }
 
 impl ReadXdr for Curve25519Secret {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -46039,7 +45708,7 @@ impl ReadXdr for Curve25519Secret {
 }
 
 impl WriteXdr for Curve25519Secret {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.key.write_xdr(w)?;
@@ -46070,7 +45739,7 @@ pub struct Curve25519Public {
 }
 
 impl ReadXdr for Curve25519Public {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -46081,7 +45750,7 @@ impl ReadXdr for Curve25519Public {
 }
 
 impl WriteXdr for Curve25519Public {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.key.write_xdr(w)?;
@@ -46112,7 +45781,7 @@ pub struct HmacSha256Key {
 }
 
 impl ReadXdr for HmacSha256Key {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -46123,7 +45792,7 @@ impl ReadXdr for HmacSha256Key {
 }
 
 impl WriteXdr for HmacSha256Key {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.key.write_xdr(w)?;
@@ -46154,7 +45823,7 @@ pub struct HmacSha256Mac {
 }
 
 impl ReadXdr for HmacSha256Mac {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -46165,7 +45834,7 @@ impl ReadXdr for HmacSha256Mac {
 }
 
 impl WriteXdr for HmacSha256Mac {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.mac.write_xdr(w)?;
@@ -46196,7 +45865,7 @@ pub struct ShortHashSeed {
 }
 
 impl ReadXdr for ShortHashSeed {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -46207,7 +45876,7 @@ impl ReadXdr for ShortHashSeed {
 }
 
 impl WriteXdr for ShortHashSeed {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.seed.write_xdr(w)?;
@@ -46310,7 +45979,7 @@ impl From<BinaryFuseFilterType> for i32 {
 }
 
 impl ReadXdr for BinaryFuseFilterType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             let e = i32::read_xdr(r)?;
@@ -46321,7 +45990,7 @@ impl ReadXdr for BinaryFuseFilterType {
 }
 
 impl WriteXdr for BinaryFuseFilterType {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             let i: i32 = (*self).into();
@@ -46374,7 +46043,7 @@ pub struct SerializedBinaryFuseFilter {
 }
 
 impl ReadXdr for SerializedBinaryFuseFilter {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self> {
         r.with_limited_depth(|r| {
             Ok(Self {
@@ -46393,7 +46062,7 @@ impl ReadXdr for SerializedBinaryFuseFilter {
 }
 
 impl WriteXdr for SerializedBinaryFuseFilter {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         w.with_limited_depth(|w| {
             self.type_.write_xdr(w)?;
@@ -46431,7 +46100,6 @@ pub enum TypeVariant {
     ScpQuorumSet,
     ConfigSettingContractExecutionLanesV0,
     ConfigSettingContractComputeV0,
-    ConfigSettingContractParallelComputeV0,
     ConfigSettingContractLedgerCostV0,
     ConfigSettingContractHistoricalDataV0,
     ConfigSettingContractEventsV0,
@@ -46607,9 +46275,6 @@ pub enum TypeVariant {
     LedgerUpgrade,
     ConfigUpgradeSet,
     TxSetComponentType,
-    TxExecutionThread,
-    ParallelTxExecutionStage,
-    ParallelTxsComponent,
     TxSetComponent,
     TxSetComponentTxsMaybeDiscountedFee,
     TransactionPhase,
@@ -46638,6 +46303,7 @@ pub enum TypeVariant {
     ContractEventBody,
     ContractEventV0,
     DiagnosticEvent,
+    DiagnosticEvents,
     SorobanTransactionMetaExtV1,
     SorobanTransactionMetaExt,
     SorobanTransactionMeta,
@@ -46765,7 +46431,6 @@ pub enum TypeVariant {
     ArchivalProofBody,
     SorobanResources,
     SorobanTransactionData,
-    SorobanTransactionDataExt,
     TransactionV0,
     TransactionV0Ext,
     TransactionV0Envelope,
@@ -46883,7 +46548,7 @@ pub enum TypeVariant {
 }
 
 impl TypeVariant {
-    pub const VARIANTS: [TypeVariant; 462] = [
+    pub const VARIANTS: [TypeVariant; 458] = [
         TypeVariant::Value,
         TypeVariant::ScpBallot,
         TypeVariant::ScpStatementType,
@@ -46897,7 +46562,6 @@ impl TypeVariant {
         TypeVariant::ScpQuorumSet,
         TypeVariant::ConfigSettingContractExecutionLanesV0,
         TypeVariant::ConfigSettingContractComputeV0,
-        TypeVariant::ConfigSettingContractParallelComputeV0,
         TypeVariant::ConfigSettingContractLedgerCostV0,
         TypeVariant::ConfigSettingContractHistoricalDataV0,
         TypeVariant::ConfigSettingContractEventsV0,
@@ -47073,9 +46737,6 @@ impl TypeVariant {
         TypeVariant::LedgerUpgrade,
         TypeVariant::ConfigUpgradeSet,
         TypeVariant::TxSetComponentType,
-        TypeVariant::TxExecutionThread,
-        TypeVariant::ParallelTxExecutionStage,
-        TypeVariant::ParallelTxsComponent,
         TypeVariant::TxSetComponent,
         TypeVariant::TxSetComponentTxsMaybeDiscountedFee,
         TypeVariant::TransactionPhase,
@@ -47104,6 +46765,7 @@ impl TypeVariant {
         TypeVariant::ContractEventBody,
         TypeVariant::ContractEventV0,
         TypeVariant::DiagnosticEvent,
+        TypeVariant::DiagnosticEvents,
         TypeVariant::SorobanTransactionMetaExtV1,
         TypeVariant::SorobanTransactionMetaExt,
         TypeVariant::SorobanTransactionMeta,
@@ -47231,7 +46893,6 @@ impl TypeVariant {
         TypeVariant::ArchivalProofBody,
         TypeVariant::SorobanResources,
         TypeVariant::SorobanTransactionData,
-        TypeVariant::SorobanTransactionDataExt,
         TypeVariant::TransactionV0,
         TypeVariant::TransactionV0Ext,
         TypeVariant::TransactionV0Envelope,
@@ -47347,7 +47008,7 @@ impl TypeVariant {
         TypeVariant::BinaryFuseFilterType,
         TypeVariant::SerializedBinaryFuseFilter,
     ];
-    pub const VARIANTS_STR: [&'static str; 462] = [
+    pub const VARIANTS_STR: [&'static str; 458] = [
         "Value",
         "ScpBallot",
         "ScpStatementType",
@@ -47361,7 +47022,6 @@ impl TypeVariant {
         "ScpQuorumSet",
         "ConfigSettingContractExecutionLanesV0",
         "ConfigSettingContractComputeV0",
-        "ConfigSettingContractParallelComputeV0",
         "ConfigSettingContractLedgerCostV0",
         "ConfigSettingContractHistoricalDataV0",
         "ConfigSettingContractEventsV0",
@@ -47537,9 +47197,6 @@ impl TypeVariant {
         "LedgerUpgrade",
         "ConfigUpgradeSet",
         "TxSetComponentType",
-        "TxExecutionThread",
-        "ParallelTxExecutionStage",
-        "ParallelTxsComponent",
         "TxSetComponent",
         "TxSetComponentTxsMaybeDiscountedFee",
         "TransactionPhase",
@@ -47568,6 +47225,7 @@ impl TypeVariant {
         "ContractEventBody",
         "ContractEventV0",
         "DiagnosticEvent",
+        "DiagnosticEvents",
         "SorobanTransactionMetaExtV1",
         "SorobanTransactionMetaExt",
         "SorobanTransactionMeta",
@@ -47695,7 +47353,6 @@ impl TypeVariant {
         "ArchivalProofBody",
         "SorobanResources",
         "SorobanTransactionData",
-        "SorobanTransactionDataExt",
         "TransactionV0",
         "TransactionV0Ext",
         "TransactionV0Envelope",
@@ -47829,9 +47486,6 @@ impl TypeVariant {
             Self::ScpQuorumSet => "ScpQuorumSet",
             Self::ConfigSettingContractExecutionLanesV0 => "ConfigSettingContractExecutionLanesV0",
             Self::ConfigSettingContractComputeV0 => "ConfigSettingContractComputeV0",
-            Self::ConfigSettingContractParallelComputeV0 => {
-                "ConfigSettingContractParallelComputeV0"
-            }
             Self::ConfigSettingContractLedgerCostV0 => "ConfigSettingContractLedgerCostV0",
             Self::ConfigSettingContractHistoricalDataV0 => "ConfigSettingContractHistoricalDataV0",
             Self::ConfigSettingContractEventsV0 => "ConfigSettingContractEventsV0",
@@ -48009,9 +47663,6 @@ impl TypeVariant {
             Self::LedgerUpgrade => "LedgerUpgrade",
             Self::ConfigUpgradeSet => "ConfigUpgradeSet",
             Self::TxSetComponentType => "TxSetComponentType",
-            Self::TxExecutionThread => "TxExecutionThread",
-            Self::ParallelTxExecutionStage => "ParallelTxExecutionStage",
-            Self::ParallelTxsComponent => "ParallelTxsComponent",
             Self::TxSetComponent => "TxSetComponent",
             Self::TxSetComponentTxsMaybeDiscountedFee => "TxSetComponentTxsMaybeDiscountedFee",
             Self::TransactionPhase => "TransactionPhase",
@@ -48040,6 +47691,7 @@ impl TypeVariant {
             Self::ContractEventBody => "ContractEventBody",
             Self::ContractEventV0 => "ContractEventV0",
             Self::DiagnosticEvent => "DiagnosticEvent",
+            Self::DiagnosticEvents => "DiagnosticEvents",
             Self::SorobanTransactionMetaExtV1 => "SorobanTransactionMetaExtV1",
             Self::SorobanTransactionMetaExt => "SorobanTransactionMetaExt",
             Self::SorobanTransactionMeta => "SorobanTransactionMeta",
@@ -48173,7 +47825,6 @@ impl TypeVariant {
             Self::ArchivalProofBody => "ArchivalProofBody",
             Self::SorobanResources => "SorobanResources",
             Self::SorobanTransactionData => "SorobanTransactionData",
-            Self::SorobanTransactionDataExt => "SorobanTransactionDataExt",
             Self::TransactionV0 => "TransactionV0",
             Self::TransactionV0Ext => "TransactionV0Ext",
             Self::TransactionV0Envelope => "TransactionV0Envelope",
@@ -48297,7 +47948,7 @@ impl TypeVariant {
 
     #[must_use]
     #[allow(clippy::too_many_lines)]
-    pub const fn variants() -> [TypeVariant; 462] {
+    pub const fn variants() -> [TypeVariant; 458] {
         Self::VARIANTS
     }
 
@@ -48322,9 +47973,6 @@ impl TypeVariant {
             }
             Self::ConfigSettingContractComputeV0 => {
                 gen.into_root_schema_for::<ConfigSettingContractComputeV0>()
-            }
-            Self::ConfigSettingContractParallelComputeV0 => {
-                gen.into_root_schema_for::<ConfigSettingContractParallelComputeV0>()
             }
             Self::ConfigSettingContractLedgerCostV0 => {
                 gen.into_root_schema_for::<ConfigSettingContractLedgerCostV0>()
@@ -48549,11 +48197,6 @@ impl TypeVariant {
             Self::LedgerUpgrade => gen.into_root_schema_for::<LedgerUpgrade>(),
             Self::ConfigUpgradeSet => gen.into_root_schema_for::<ConfigUpgradeSet>(),
             Self::TxSetComponentType => gen.into_root_schema_for::<TxSetComponentType>(),
-            Self::TxExecutionThread => gen.into_root_schema_for::<TxExecutionThread>(),
-            Self::ParallelTxExecutionStage => {
-                gen.into_root_schema_for::<ParallelTxExecutionStage>()
-            }
-            Self::ParallelTxsComponent => gen.into_root_schema_for::<ParallelTxsComponent>(),
             Self::TxSetComponent => gen.into_root_schema_for::<TxSetComponent>(),
             Self::TxSetComponentTxsMaybeDiscountedFee => {
                 gen.into_root_schema_for::<TxSetComponentTxsMaybeDiscountedFee>()
@@ -48596,6 +48239,7 @@ impl TypeVariant {
             Self::ContractEventBody => gen.into_root_schema_for::<ContractEventBody>(),
             Self::ContractEventV0 => gen.into_root_schema_for::<ContractEventV0>(),
             Self::DiagnosticEvent => gen.into_root_schema_for::<DiagnosticEvent>(),
+            Self::DiagnosticEvents => gen.into_root_schema_for::<DiagnosticEvents>(),
             Self::SorobanTransactionMetaExtV1 => {
                 gen.into_root_schema_for::<SorobanTransactionMetaExtV1>()
             }
@@ -48783,9 +48427,6 @@ impl TypeVariant {
             Self::ArchivalProofBody => gen.into_root_schema_for::<ArchivalProofBody>(),
             Self::SorobanResources => gen.into_root_schema_for::<SorobanResources>(),
             Self::SorobanTransactionData => gen.into_root_schema_for::<SorobanTransactionData>(),
-            Self::SorobanTransactionDataExt => {
-                gen.into_root_schema_for::<SorobanTransactionDataExt>()
-            }
             Self::TransactionV0 => gen.into_root_schema_for::<TransactionV0>(),
             Self::TransactionV0Ext => gen.into_root_schema_for::<TransactionV0Ext>(),
             Self::TransactionV0Envelope => gen.into_root_schema_for::<TransactionV0Envelope>(),
@@ -49017,9 +48658,6 @@ impl core::str::FromStr for TypeVariant {
                 Ok(Self::ConfigSettingContractExecutionLanesV0)
             }
             "ConfigSettingContractComputeV0" => Ok(Self::ConfigSettingContractComputeV0),
-            "ConfigSettingContractParallelComputeV0" => {
-                Ok(Self::ConfigSettingContractParallelComputeV0)
-            }
             "ConfigSettingContractLedgerCostV0" => Ok(Self::ConfigSettingContractLedgerCostV0),
             "ConfigSettingContractHistoricalDataV0" => {
                 Ok(Self::ConfigSettingContractHistoricalDataV0)
@@ -49199,9 +48837,6 @@ impl core::str::FromStr for TypeVariant {
             "LedgerUpgrade" => Ok(Self::LedgerUpgrade),
             "ConfigUpgradeSet" => Ok(Self::ConfigUpgradeSet),
             "TxSetComponentType" => Ok(Self::TxSetComponentType),
-            "TxExecutionThread" => Ok(Self::TxExecutionThread),
-            "ParallelTxExecutionStage" => Ok(Self::ParallelTxExecutionStage),
-            "ParallelTxsComponent" => Ok(Self::ParallelTxsComponent),
             "TxSetComponent" => Ok(Self::TxSetComponent),
             "TxSetComponentTxsMaybeDiscountedFee" => Ok(Self::TxSetComponentTxsMaybeDiscountedFee),
             "TransactionPhase" => Ok(Self::TransactionPhase),
@@ -49230,6 +48865,7 @@ impl core::str::FromStr for TypeVariant {
             "ContractEventBody" => Ok(Self::ContractEventBody),
             "ContractEventV0" => Ok(Self::ContractEventV0),
             "DiagnosticEvent" => Ok(Self::DiagnosticEvent),
+            "DiagnosticEvents" => Ok(Self::DiagnosticEvents),
             "SorobanTransactionMetaExtV1" => Ok(Self::SorobanTransactionMetaExtV1),
             "SorobanTransactionMetaExt" => Ok(Self::SorobanTransactionMetaExt),
             "SorobanTransactionMeta" => Ok(Self::SorobanTransactionMeta),
@@ -49369,7 +49005,6 @@ impl core::str::FromStr for TypeVariant {
             "ArchivalProofBody" => Ok(Self::ArchivalProofBody),
             "SorobanResources" => Ok(Self::SorobanResources),
             "SorobanTransactionData" => Ok(Self::SorobanTransactionData),
-            "SorobanTransactionDataExt" => Ok(Self::SorobanTransactionDataExt),
             "TransactionV0" => Ok(Self::TransactionV0),
             "TransactionV0Ext" => Ok(Self::TransactionV0Ext),
             "TransactionV0Envelope" => Ok(Self::TransactionV0Envelope),
@@ -49519,7 +49154,6 @@ pub enum Type {
     ScpQuorumSet(Box<ScpQuorumSet>),
     ConfigSettingContractExecutionLanesV0(Box<ConfigSettingContractExecutionLanesV0>),
     ConfigSettingContractComputeV0(Box<ConfigSettingContractComputeV0>),
-    ConfigSettingContractParallelComputeV0(Box<ConfigSettingContractParallelComputeV0>),
     ConfigSettingContractLedgerCostV0(Box<ConfigSettingContractLedgerCostV0>),
     ConfigSettingContractHistoricalDataV0(Box<ConfigSettingContractHistoricalDataV0>),
     ConfigSettingContractEventsV0(Box<ConfigSettingContractEventsV0>),
@@ -49695,9 +49329,6 @@ pub enum Type {
     LedgerUpgrade(Box<LedgerUpgrade>),
     ConfigUpgradeSet(Box<ConfigUpgradeSet>),
     TxSetComponentType(Box<TxSetComponentType>),
-    TxExecutionThread(Box<TxExecutionThread>),
-    ParallelTxExecutionStage(Box<ParallelTxExecutionStage>),
-    ParallelTxsComponent(Box<ParallelTxsComponent>),
     TxSetComponent(Box<TxSetComponent>),
     TxSetComponentTxsMaybeDiscountedFee(Box<TxSetComponentTxsMaybeDiscountedFee>),
     TransactionPhase(Box<TransactionPhase>),
@@ -49726,6 +49357,7 @@ pub enum Type {
     ContractEventBody(Box<ContractEventBody>),
     ContractEventV0(Box<ContractEventV0>),
     DiagnosticEvent(Box<DiagnosticEvent>),
+    DiagnosticEvents(Box<DiagnosticEvents>),
     SorobanTransactionMetaExtV1(Box<SorobanTransactionMetaExtV1>),
     SorobanTransactionMetaExt(Box<SorobanTransactionMetaExt>),
     SorobanTransactionMeta(Box<SorobanTransactionMeta>),
@@ -49853,7 +49485,6 @@ pub enum Type {
     ArchivalProofBody(Box<ArchivalProofBody>),
     SorobanResources(Box<SorobanResources>),
     SorobanTransactionData(Box<SorobanTransactionData>),
-    SorobanTransactionDataExt(Box<SorobanTransactionDataExt>),
     TransactionV0(Box<TransactionV0>),
     TransactionV0Ext(Box<TransactionV0Ext>),
     TransactionV0Envelope(Box<TransactionV0Envelope>),
@@ -49971,7 +49602,7 @@ pub enum Type {
 }
 
 impl Type {
-    pub const VARIANTS: [TypeVariant; 462] = [
+    pub const VARIANTS: [TypeVariant; 458] = [
         TypeVariant::Value,
         TypeVariant::ScpBallot,
         TypeVariant::ScpStatementType,
@@ -49985,7 +49616,6 @@ impl Type {
         TypeVariant::ScpQuorumSet,
         TypeVariant::ConfigSettingContractExecutionLanesV0,
         TypeVariant::ConfigSettingContractComputeV0,
-        TypeVariant::ConfigSettingContractParallelComputeV0,
         TypeVariant::ConfigSettingContractLedgerCostV0,
         TypeVariant::ConfigSettingContractHistoricalDataV0,
         TypeVariant::ConfigSettingContractEventsV0,
@@ -50161,9 +49791,6 @@ impl Type {
         TypeVariant::LedgerUpgrade,
         TypeVariant::ConfigUpgradeSet,
         TypeVariant::TxSetComponentType,
-        TypeVariant::TxExecutionThread,
-        TypeVariant::ParallelTxExecutionStage,
-        TypeVariant::ParallelTxsComponent,
         TypeVariant::TxSetComponent,
         TypeVariant::TxSetComponentTxsMaybeDiscountedFee,
         TypeVariant::TransactionPhase,
@@ -50192,6 +49819,7 @@ impl Type {
         TypeVariant::ContractEventBody,
         TypeVariant::ContractEventV0,
         TypeVariant::DiagnosticEvent,
+        TypeVariant::DiagnosticEvents,
         TypeVariant::SorobanTransactionMetaExtV1,
         TypeVariant::SorobanTransactionMetaExt,
         TypeVariant::SorobanTransactionMeta,
@@ -50319,7 +49947,6 @@ impl Type {
         TypeVariant::ArchivalProofBody,
         TypeVariant::SorobanResources,
         TypeVariant::SorobanTransactionData,
-        TypeVariant::SorobanTransactionDataExt,
         TypeVariant::TransactionV0,
         TypeVariant::TransactionV0Ext,
         TypeVariant::TransactionV0Envelope,
@@ -50435,7 +50062,7 @@ impl Type {
         TypeVariant::BinaryFuseFilterType,
         TypeVariant::SerializedBinaryFuseFilter,
     ];
-    pub const VARIANTS_STR: [&'static str; 462] = [
+    pub const VARIANTS_STR: [&'static str; 458] = [
         "Value",
         "ScpBallot",
         "ScpStatementType",
@@ -50449,7 +50076,6 @@ impl Type {
         "ScpQuorumSet",
         "ConfigSettingContractExecutionLanesV0",
         "ConfigSettingContractComputeV0",
-        "ConfigSettingContractParallelComputeV0",
         "ConfigSettingContractLedgerCostV0",
         "ConfigSettingContractHistoricalDataV0",
         "ConfigSettingContractEventsV0",
@@ -50625,9 +50251,6 @@ impl Type {
         "LedgerUpgrade",
         "ConfigUpgradeSet",
         "TxSetComponentType",
-        "TxExecutionThread",
-        "ParallelTxExecutionStage",
-        "ParallelTxsComponent",
         "TxSetComponent",
         "TxSetComponentTxsMaybeDiscountedFee",
         "TransactionPhase",
@@ -50656,6 +50279,7 @@ impl Type {
         "ContractEventBody",
         "ContractEventV0",
         "DiagnosticEvent",
+        "DiagnosticEvents",
         "SorobanTransactionMetaExtV1",
         "SorobanTransactionMetaExt",
         "SorobanTransactionMeta",
@@ -50783,7 +50407,6 @@ impl Type {
         "ArchivalProofBody",
         "SorobanResources",
         "SorobanTransactionData",
-        "SorobanTransactionDataExt",
         "TransactionV0",
         "TransactionV0Ext",
         "TransactionV0Envelope",
@@ -50900,7 +50523,7 @@ impl Type {
         "SerializedBinaryFuseFilter",
     ];
 
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     #[allow(clippy::too_many_lines)]
     pub fn read_xdr<R: Read>(v: TypeVariant, r: &mut Limited<R>) -> Result<Self> {
         match v {
@@ -50955,11 +50578,6 @@ impl Type {
             TypeVariant::ConfigSettingContractComputeV0 => r.with_limited_depth(|r| {
                 Ok(Self::ConfigSettingContractComputeV0(Box::new(
                     ConfigSettingContractComputeV0::read_xdr(r)?,
-                )))
-            }),
-            TypeVariant::ConfigSettingContractParallelComputeV0 => r.with_limited_depth(|r| {
-                Ok(Self::ConfigSettingContractParallelComputeV0(Box::new(
-                    ConfigSettingContractParallelComputeV0::read_xdr(r)?,
                 )))
             }),
             TypeVariant::ConfigSettingContractLedgerCostV0 => r.with_limited_depth(|r| {
@@ -51691,21 +51309,6 @@ impl Type {
                     TxSetComponentType::read_xdr(r)?,
                 )))
             }),
-            TypeVariant::TxExecutionThread => r.with_limited_depth(|r| {
-                Ok(Self::TxExecutionThread(Box::new(
-                    TxExecutionThread::read_xdr(r)?,
-                )))
-            }),
-            TypeVariant::ParallelTxExecutionStage => r.with_limited_depth(|r| {
-                Ok(Self::ParallelTxExecutionStage(Box::new(
-                    ParallelTxExecutionStage::read_xdr(r)?,
-                )))
-            }),
-            TypeVariant::ParallelTxsComponent => r.with_limited_depth(|r| {
-                Ok(Self::ParallelTxsComponent(Box::new(
-                    ParallelTxsComponent::read_xdr(r)?,
-                )))
-            }),
             TypeVariant::TxSetComponent => r.with_limited_depth(|r| {
                 Ok(Self::TxSetComponent(Box::new(TxSetComponent::read_xdr(r)?)))
             }),
@@ -51837,6 +51440,11 @@ impl Type {
                 Ok(Self::DiagnosticEvent(Box::new(DiagnosticEvent::read_xdr(
                     r,
                 )?)))
+            }),
+            TypeVariant::DiagnosticEvents => r.with_limited_depth(|r| {
+                Ok(Self::DiagnosticEvents(Box::new(
+                    DiagnosticEvents::read_xdr(r)?,
+                )))
             }),
             TypeVariant::SorobanTransactionMetaExtV1 => r.with_limited_depth(|r| {
                 Ok(Self::SorobanTransactionMetaExtV1(Box::new(
@@ -52397,11 +52005,6 @@ impl Type {
                     SorobanTransactionData::read_xdr(r)?,
                 )))
             }),
-            TypeVariant::SorobanTransactionDataExt => r.with_limited_depth(|r| {
-                Ok(Self::SorobanTransactionDataExt(Box::new(
-                    SorobanTransactionDataExt::read_xdr(r)?,
-                )))
-            }),
             TypeVariant::TransactionV0 => r.with_limited_depth(|r| {
                 Ok(Self::TransactionV0(Box::new(TransactionV0::read_xdr(r)?)))
             }),
@@ -52929,7 +52532,7 @@ impl Type {
         Ok(t)
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     pub fn read_xdr_to_end<R: Read>(v: TypeVariant, r: &mut Limited<R>) -> Result<Self> {
         let s = Self::read_xdr(v, r)?;
         // Check that any further reads, such as this read of one byte, read no
@@ -53015,13 +52618,6 @@ impl Type {
                     r.limits.clone(),
                 )
                 .map(|r| r.map(|t| Self::ConfigSettingContractComputeV0(Box::new(t)))),
-            ),
-            TypeVariant::ConfigSettingContractParallelComputeV0 => Box::new(
-                ReadXdrIter::<_, ConfigSettingContractParallelComputeV0>::new(
-                    &mut r.inner,
-                    r.limits.clone(),
-                )
-                .map(|r| r.map(|t| Self::ConfigSettingContractParallelComputeV0(Box::new(t)))),
             ),
             TypeVariant::ConfigSettingContractLedgerCostV0 => Box::new(
                 ReadXdrIter::<_, ConfigSettingContractLedgerCostV0>::new(
@@ -53747,18 +53343,6 @@ impl Type {
                 ReadXdrIter::<_, TxSetComponentType>::new(&mut r.inner, r.limits.clone())
                     .map(|r| r.map(|t| Self::TxSetComponentType(Box::new(t)))),
             ),
-            TypeVariant::TxExecutionThread => Box::new(
-                ReadXdrIter::<_, TxExecutionThread>::new(&mut r.inner, r.limits.clone())
-                    .map(|r| r.map(|t| Self::TxExecutionThread(Box::new(t)))),
-            ),
-            TypeVariant::ParallelTxExecutionStage => Box::new(
-                ReadXdrIter::<_, ParallelTxExecutionStage>::new(&mut r.inner, r.limits.clone())
-                    .map(|r| r.map(|t| Self::ParallelTxExecutionStage(Box::new(t)))),
-            ),
-            TypeVariant::ParallelTxsComponent => Box::new(
-                ReadXdrIter::<_, ParallelTxsComponent>::new(&mut r.inner, r.limits.clone())
-                    .map(|r| r.map(|t| Self::ParallelTxsComponent(Box::new(t)))),
-            ),
             TypeVariant::TxSetComponent => Box::new(
                 ReadXdrIter::<_, TxSetComponent>::new(&mut r.inner, r.limits.clone())
                     .map(|r| r.map(|t| Self::TxSetComponent(Box::new(t)))),
@@ -53879,6 +53463,10 @@ impl Type {
             TypeVariant::DiagnosticEvent => Box::new(
                 ReadXdrIter::<_, DiagnosticEvent>::new(&mut r.inner, r.limits.clone())
                     .map(|r| r.map(|t| Self::DiagnosticEvent(Box::new(t)))),
+            ),
+            TypeVariant::DiagnosticEvents => Box::new(
+                ReadXdrIter::<_, DiagnosticEvents>::new(&mut r.inner, r.limits.clone())
+                    .map(|r| r.map(|t| Self::DiagnosticEvents(Box::new(t)))),
             ),
             TypeVariant::SorobanTransactionMetaExtV1 => Box::new(
                 ReadXdrIter::<_, SorobanTransactionMetaExtV1>::new(&mut r.inner, r.limits.clone())
@@ -54428,10 +54016,6 @@ impl Type {
             TypeVariant::SorobanTransactionData => Box::new(
                 ReadXdrIter::<_, SorobanTransactionData>::new(&mut r.inner, r.limits.clone())
                     .map(|r| r.map(|t| Self::SorobanTransactionData(Box::new(t)))),
-            ),
-            TypeVariant::SorobanTransactionDataExt => Box::new(
-                ReadXdrIter::<_, SorobanTransactionDataExt>::new(&mut r.inner, r.limits.clone())
-                    .map(|r| r.map(|t| Self::SorobanTransactionDataExt(Box::new(t)))),
             ),
             TypeVariant::TransactionV0 => Box::new(
                 ReadXdrIter::<_, TransactionV0>::new(&mut r.inner, r.limits.clone())
@@ -55015,13 +54599,6 @@ impl Type {
                     r.limits.clone(),
                 )
                 .map(|r| r.map(|t| Self::ConfigSettingContractComputeV0(Box::new(t.0)))),
-            ),
-            TypeVariant::ConfigSettingContractParallelComputeV0 => Box::new(
-                ReadXdrIter::<_, Frame<ConfigSettingContractParallelComputeV0>>::new(
-                    &mut r.inner,
-                    r.limits.clone(),
-                )
-                .map(|r| r.map(|t| Self::ConfigSettingContractParallelComputeV0(Box::new(t.0)))),
             ),
             TypeVariant::ConfigSettingContractLedgerCostV0 => Box::new(
                 ReadXdrIter::<_, Frame<ConfigSettingContractLedgerCostV0>>::new(
@@ -55849,21 +55426,6 @@ impl Type {
                 ReadXdrIter::<_, Frame<TxSetComponentType>>::new(&mut r.inner, r.limits.clone())
                     .map(|r| r.map(|t| Self::TxSetComponentType(Box::new(t.0)))),
             ),
-            TypeVariant::TxExecutionThread => Box::new(
-                ReadXdrIter::<_, Frame<TxExecutionThread>>::new(&mut r.inner, r.limits.clone())
-                    .map(|r| r.map(|t| Self::TxExecutionThread(Box::new(t.0)))),
-            ),
-            TypeVariant::ParallelTxExecutionStage => Box::new(
-                ReadXdrIter::<_, Frame<ParallelTxExecutionStage>>::new(
-                    &mut r.inner,
-                    r.limits.clone(),
-                )
-                .map(|r| r.map(|t| Self::ParallelTxExecutionStage(Box::new(t.0)))),
-            ),
-            TypeVariant::ParallelTxsComponent => Box::new(
-                ReadXdrIter::<_, Frame<ParallelTxsComponent>>::new(&mut r.inner, r.limits.clone())
-                    .map(|r| r.map(|t| Self::ParallelTxsComponent(Box::new(t.0)))),
-            ),
             TypeVariant::TxSetComponent => Box::new(
                 ReadXdrIter::<_, Frame<TxSetComponent>>::new(&mut r.inner, r.limits.clone())
                     .map(|r| r.map(|t| Self::TxSetComponent(Box::new(t.0)))),
@@ -55999,6 +55561,10 @@ impl Type {
             TypeVariant::DiagnosticEvent => Box::new(
                 ReadXdrIter::<_, Frame<DiagnosticEvent>>::new(&mut r.inner, r.limits.clone())
                     .map(|r| r.map(|t| Self::DiagnosticEvent(Box::new(t.0)))),
+            ),
+            TypeVariant::DiagnosticEvents => Box::new(
+                ReadXdrIter::<_, Frame<DiagnosticEvents>>::new(&mut r.inner, r.limits.clone())
+                    .map(|r| r.map(|t| Self::DiagnosticEvents(Box::new(t.0)))),
             ),
             TypeVariant::SorobanTransactionMetaExtV1 => Box::new(
                 ReadXdrIter::<_, Frame<SorobanTransactionMetaExtV1>>::new(
@@ -56646,13 +56212,6 @@ impl Type {
                     r.limits.clone(),
                 )
                 .map(|r| r.map(|t| Self::SorobanTransactionData(Box::new(t.0)))),
-            ),
-            TypeVariant::SorobanTransactionDataExt => Box::new(
-                ReadXdrIter::<_, Frame<SorobanTransactionDataExt>>::new(
-                    &mut r.inner,
-                    r.limits.clone(),
-                )
-                .map(|r| r.map(|t| Self::SorobanTransactionDataExt(Box::new(t.0)))),
             ),
             TypeVariant::TransactionV0 => Box::new(
                 ReadXdrIter::<_, Frame<TransactionV0>>::new(&mut r.inner, r.limits.clone())
@@ -57318,13 +56877,6 @@ impl Type {
             TypeVariant::ConfigSettingContractComputeV0 => Box::new(
                 ReadXdrIter::<_, ConfigSettingContractComputeV0>::new(dec, r.limits.clone())
                     .map(|r| r.map(|t| Self::ConfigSettingContractComputeV0(Box::new(t)))),
-            ),
-            TypeVariant::ConfigSettingContractParallelComputeV0 => Box::new(
-                ReadXdrIter::<_, ConfigSettingContractParallelComputeV0>::new(
-                    dec,
-                    r.limits.clone(),
-                )
-                .map(|r| r.map(|t| Self::ConfigSettingContractParallelComputeV0(Box::new(t)))),
             ),
             TypeVariant::ConfigSettingContractLedgerCostV0 => Box::new(
                 ReadXdrIter::<_, ConfigSettingContractLedgerCostV0>::new(dec, r.limits.clone())
@@ -58029,18 +57581,6 @@ impl Type {
                 ReadXdrIter::<_, TxSetComponentType>::new(dec, r.limits.clone())
                     .map(|r| r.map(|t| Self::TxSetComponentType(Box::new(t)))),
             ),
-            TypeVariant::TxExecutionThread => Box::new(
-                ReadXdrIter::<_, TxExecutionThread>::new(dec, r.limits.clone())
-                    .map(|r| r.map(|t| Self::TxExecutionThread(Box::new(t)))),
-            ),
-            TypeVariant::ParallelTxExecutionStage => Box::new(
-                ReadXdrIter::<_, ParallelTxExecutionStage>::new(dec, r.limits.clone())
-                    .map(|r| r.map(|t| Self::ParallelTxExecutionStage(Box::new(t)))),
-            ),
-            TypeVariant::ParallelTxsComponent => Box::new(
-                ReadXdrIter::<_, ParallelTxsComponent>::new(dec, r.limits.clone())
-                    .map(|r| r.map(|t| Self::ParallelTxsComponent(Box::new(t)))),
-            ),
             TypeVariant::TxSetComponent => Box::new(
                 ReadXdrIter::<_, TxSetComponent>::new(dec, r.limits.clone())
                     .map(|r| r.map(|t| Self::TxSetComponent(Box::new(t)))),
@@ -58152,6 +57692,10 @@ impl Type {
             TypeVariant::DiagnosticEvent => Box::new(
                 ReadXdrIter::<_, DiagnosticEvent>::new(dec, r.limits.clone())
                     .map(|r| r.map(|t| Self::DiagnosticEvent(Box::new(t)))),
+            ),
+            TypeVariant::DiagnosticEvents => Box::new(
+                ReadXdrIter::<_, DiagnosticEvents>::new(dec, r.limits.clone())
+                    .map(|r| r.map(|t| Self::DiagnosticEvents(Box::new(t)))),
             ),
             TypeVariant::SorobanTransactionMetaExtV1 => Box::new(
                 ReadXdrIter::<_, SorobanTransactionMetaExtV1>::new(dec, r.limits.clone())
@@ -58672,10 +58216,6 @@ impl Type {
                 ReadXdrIter::<_, SorobanTransactionData>::new(dec, r.limits.clone())
                     .map(|r| r.map(|t| Self::SorobanTransactionData(Box::new(t)))),
             ),
-            TypeVariant::SorobanTransactionDataExt => Box::new(
-                ReadXdrIter::<_, SorobanTransactionDataExt>::new(dec, r.limits.clone())
-                    .map(|r| r.map(|t| Self::SorobanTransactionDataExt(Box::new(t)))),
-            ),
             TypeVariant::TransactionV0 => Box::new(
                 ReadXdrIter::<_, TransactionV0>::new(dec, r.limits.clone())
                     .map(|r| r.map(|t| Self::TransactionV0(Box::new(t)))),
@@ -59143,7 +58683,7 @@ impl Type {
         }
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     pub fn from_xdr<B: AsRef<[u8]>>(v: TypeVariant, bytes: B, limits: Limits) -> Result<Self> {
         let mut cursor = Limited::new(Cursor::new(bytes.as_ref()), limits);
         let t = Self::read_xdr_to_end(v, &mut cursor)?;
@@ -59162,8 +58702,14 @@ impl Type {
     }
 
     #[cfg(all(feature = "std", feature = "serde_json"))]
-    #[allow(clippy::too_many_lines)]
+    #[deprecated(note = "use from_json")]
     pub fn read_json(v: TypeVariant, r: impl Read) -> Result<Self> {
+        Self::from_json(v, r)
+    }
+
+    #[cfg(all(feature = "std", feature = "serde_json"))]
+    #[allow(clippy::too_many_lines)]
+    pub fn from_json(v: TypeVariant, r: impl Read) -> Result<Self> {
         match v {
             TypeVariant::Value => Ok(Self::Value(Box::new(serde_json::from_reader(r)?))),
             TypeVariant::ScpBallot => Ok(Self::ScpBallot(Box::new(serde_json::from_reader(r)?))),
@@ -59199,9 +58745,6 @@ impl Type {
             ),
             TypeVariant::ConfigSettingContractComputeV0 => Ok(
                 Self::ConfigSettingContractComputeV0(Box::new(serde_json::from_reader(r)?)),
-            ),
-            TypeVariant::ConfigSettingContractParallelComputeV0 => Ok(
-                Self::ConfigSettingContractParallelComputeV0(Box::new(serde_json::from_reader(r)?)),
             ),
             TypeVariant::ConfigSettingContractLedgerCostV0 => Ok(
                 Self::ConfigSettingContractLedgerCostV0(Box::new(serde_json::from_reader(r)?)),
@@ -59662,15 +59205,6 @@ impl Type {
             TypeVariant::TxSetComponentType => Ok(Self::TxSetComponentType(Box::new(
                 serde_json::from_reader(r)?,
             ))),
-            TypeVariant::TxExecutionThread => Ok(Self::TxExecutionThread(Box::new(
-                serde_json::from_reader(r)?,
-            ))),
-            TypeVariant::ParallelTxExecutionStage => Ok(Self::ParallelTxExecutionStage(Box::new(
-                serde_json::from_reader(r)?,
-            ))),
-            TypeVariant::ParallelTxsComponent => Ok(Self::ParallelTxsComponent(Box::new(
-                serde_json::from_reader(r)?,
-            ))),
             TypeVariant::TxSetComponent => {
                 Ok(Self::TxSetComponent(Box::new(serde_json::from_reader(r)?)))
             }
@@ -59755,6 +59289,9 @@ impl Type {
             TypeVariant::DiagnosticEvent => {
                 Ok(Self::DiagnosticEvent(Box::new(serde_json::from_reader(r)?)))
             }
+            TypeVariant::DiagnosticEvents => Ok(Self::DiagnosticEvents(Box::new(
+                serde_json::from_reader(r)?,
+            ))),
             TypeVariant::SorobanTransactionMetaExtV1 => Ok(Self::SorobanTransactionMetaExtV1(
                 Box::new(serde_json::from_reader(r)?),
             )),
@@ -60108,9 +59645,6 @@ impl Type {
             TypeVariant::SorobanTransactionData => Ok(Self::SorobanTransactionData(Box::new(
                 serde_json::from_reader(r)?,
             ))),
-            TypeVariant::SorobanTransactionDataExt => Ok(Self::SorobanTransactionDataExt(
-                Box::new(serde_json::from_reader(r)?),
-            )),
             TypeVariant::TransactionV0 => {
                 Ok(Self::TransactionV0(Box::new(serde_json::from_reader(r)?)))
             }
@@ -60432,6 +59966,1466 @@ impl Type {
         }
     }
 
+    #[cfg(all(feature = "std", feature = "serde_json"))]
+    #[allow(clippy::too_many_lines)]
+    pub fn deserialize_json<'r, R: serde_json::de::Read<'r>>(
+        v: TypeVariant,
+        r: &mut serde_json::de::Deserializer<R>,
+    ) -> Result<Self> {
+        match v {
+            TypeVariant::Value => Ok(Self::Value(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::ScpBallot => Ok(Self::ScpBallot(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScpStatementType => Ok(Self::ScpStatementType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScpNomination => Ok(Self::ScpNomination(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScpStatement => Ok(Self::ScpStatement(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScpStatementPledges => Ok(Self::ScpStatementPledges(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScpStatementPrepare => Ok(Self::ScpStatementPrepare(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScpStatementConfirm => Ok(Self::ScpStatementConfirm(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScpStatementExternalize => Ok(Self::ScpStatementExternalize(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScpEnvelope => Ok(Self::ScpEnvelope(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScpQuorumSet => Ok(Self::ScpQuorumSet(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ConfigSettingContractExecutionLanesV0 => {
+                Ok(Self::ConfigSettingContractExecutionLanesV0(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::ConfigSettingContractComputeV0 => {
+                Ok(Self::ConfigSettingContractComputeV0(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::ConfigSettingContractLedgerCostV0 => {
+                Ok(Self::ConfigSettingContractLedgerCostV0(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::ConfigSettingContractHistoricalDataV0 => {
+                Ok(Self::ConfigSettingContractHistoricalDataV0(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::ConfigSettingContractEventsV0 => Ok(Self::ConfigSettingContractEventsV0(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::ConfigSettingContractBandwidthV0 => {
+                Ok(Self::ConfigSettingContractBandwidthV0(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::ContractCostType => Ok(Self::ContractCostType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractCostParamEntry => Ok(Self::ContractCostParamEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::StateArchivalSettings => Ok(Self::StateArchivalSettings(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::EvictionIterator => Ok(Self::EvictionIterator(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractCostParams => Ok(Self::ContractCostParams(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ConfigSettingId => Ok(Self::ConfigSettingId(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ConfigSettingEntry => Ok(Self::ConfigSettingEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScEnvMetaKind => Ok(Self::ScEnvMetaKind(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScEnvMetaEntry => Ok(Self::ScEnvMetaEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScMetaV0 => Ok(Self::ScMetaV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScMetaKind => Ok(Self::ScMetaKind(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScMetaEntry => Ok(Self::ScMetaEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecType => Ok(Self::ScSpecType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecTypeOption => Ok(Self::ScSpecTypeOption(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecTypeResult => Ok(Self::ScSpecTypeResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecTypeVec => Ok(Self::ScSpecTypeVec(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecTypeMap => Ok(Self::ScSpecTypeMap(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecTypeTuple => Ok(Self::ScSpecTypeTuple(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecTypeBytesN => Ok(Self::ScSpecTypeBytesN(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecTypeUdt => Ok(Self::ScSpecTypeUdt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecTypeDef => Ok(Self::ScSpecTypeDef(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecUdtStructFieldV0 => Ok(Self::ScSpecUdtStructFieldV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecUdtStructV0 => Ok(Self::ScSpecUdtStructV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecUdtUnionCaseVoidV0 => Ok(Self::ScSpecUdtUnionCaseVoidV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecUdtUnionCaseTupleV0 => Ok(Self::ScSpecUdtUnionCaseTupleV0(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::ScSpecUdtUnionCaseV0Kind => Ok(Self::ScSpecUdtUnionCaseV0Kind(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecUdtUnionCaseV0 => Ok(Self::ScSpecUdtUnionCaseV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecUdtUnionV0 => Ok(Self::ScSpecUdtUnionV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecUdtEnumCaseV0 => Ok(Self::ScSpecUdtEnumCaseV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecUdtEnumV0 => Ok(Self::ScSpecUdtEnumV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecUdtErrorEnumCaseV0 => Ok(Self::ScSpecUdtErrorEnumCaseV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecUdtErrorEnumV0 => Ok(Self::ScSpecUdtErrorEnumV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecFunctionInputV0 => Ok(Self::ScSpecFunctionInputV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecFunctionV0 => Ok(Self::ScSpecFunctionV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecEntryKind => Ok(Self::ScSpecEntryKind(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSpecEntry => Ok(Self::ScSpecEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScValType => Ok(Self::ScValType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScErrorType => Ok(Self::ScErrorType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScErrorCode => Ok(Self::ScErrorCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScError => Ok(Self::ScError(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::UInt128Parts => Ok(Self::UInt128Parts(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Int128Parts => Ok(Self::Int128Parts(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::UInt256Parts => Ok(Self::UInt256Parts(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Int256Parts => Ok(Self::Int256Parts(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractExecutableType => Ok(Self::ContractExecutableType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractExecutable => Ok(Self::ContractExecutable(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScAddressType => Ok(Self::ScAddressType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScAddress => Ok(Self::ScAddress(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScVec => Ok(Self::ScVec(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::ScMap => Ok(Self::ScMap(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::ScBytes => Ok(Self::ScBytes(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScString => Ok(Self::ScString(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScSymbol => Ok(Self::ScSymbol(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScNonceKey => Ok(Self::ScNonceKey(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScContractInstance => Ok(Self::ScContractInstance(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScVal => Ok(Self::ScVal(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::ScMapEntry => Ok(Self::ScMapEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::StoredTransactionSet => Ok(Self::StoredTransactionSet(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::StoredDebugTransactionSet => Ok(Self::StoredDebugTransactionSet(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::PersistedScpStateV0 => Ok(Self::PersistedScpStateV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PersistedScpStateV1 => Ok(Self::PersistedScpStateV1(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PersistedScpState => Ok(Self::PersistedScpState(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Thresholds => Ok(Self::Thresholds(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::String32 => Ok(Self::String32(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::String64 => Ok(Self::String64(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SequenceNumber => Ok(Self::SequenceNumber(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::DataValue => Ok(Self::DataValue(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PoolId => Ok(Self::PoolId(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::AssetCode4 => Ok(Self::AssetCode4(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AssetCode12 => Ok(Self::AssetCode12(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AssetType => Ok(Self::AssetType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AssetCode => Ok(Self::AssetCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AlphaNum4 => Ok(Self::AlphaNum4(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AlphaNum12 => Ok(Self::AlphaNum12(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Asset => Ok(Self::Asset(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::Price => Ok(Self::Price(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::Liabilities => Ok(Self::Liabilities(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ThresholdIndexes => Ok(Self::ThresholdIndexes(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerEntryType => Ok(Self::LedgerEntryType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Signer => Ok(Self::Signer(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::AccountFlags => Ok(Self::AccountFlags(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SponsorshipDescriptor => Ok(Self::SponsorshipDescriptor(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AccountEntryExtensionV3 => Ok(Self::AccountEntryExtensionV3(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AccountEntryExtensionV2 => Ok(Self::AccountEntryExtensionV2(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AccountEntryExtensionV2Ext => Ok(Self::AccountEntryExtensionV2Ext(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::AccountEntryExtensionV1 => Ok(Self::AccountEntryExtensionV1(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AccountEntryExtensionV1Ext => Ok(Self::AccountEntryExtensionV1Ext(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::AccountEntry => Ok(Self::AccountEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AccountEntryExt => Ok(Self::AccountEntryExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TrustLineFlags => Ok(Self::TrustLineFlags(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LiquidityPoolType => Ok(Self::LiquidityPoolType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TrustLineAsset => Ok(Self::TrustLineAsset(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TrustLineEntryExtensionV2 => Ok(Self::TrustLineEntryExtensionV2(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::TrustLineEntryExtensionV2Ext => Ok(Self::TrustLineEntryExtensionV2Ext(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::TrustLineEntry => Ok(Self::TrustLineEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TrustLineEntryExt => Ok(Self::TrustLineEntryExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TrustLineEntryV1 => Ok(Self::TrustLineEntryV1(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TrustLineEntryV1Ext => Ok(Self::TrustLineEntryV1Ext(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::OfferEntryFlags => Ok(Self::OfferEntryFlags(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::OfferEntry => Ok(Self::OfferEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::OfferEntryExt => Ok(Self::OfferEntryExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::DataEntry => Ok(Self::DataEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::DataEntryExt => Ok(Self::DataEntryExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimPredicateType => Ok(Self::ClaimPredicateType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimPredicate => Ok(Self::ClaimPredicate(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimantType => Ok(Self::ClaimantType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Claimant => Ok(Self::Claimant(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimantV0 => Ok(Self::ClaimantV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimableBalanceIdType => Ok(Self::ClaimableBalanceIdType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimableBalanceId => Ok(Self::ClaimableBalanceId(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimableBalanceFlags => Ok(Self::ClaimableBalanceFlags(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimableBalanceEntryExtensionV1 => {
+                Ok(Self::ClaimableBalanceEntryExtensionV1(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::ClaimableBalanceEntryExtensionV1Ext => {
+                Ok(Self::ClaimableBalanceEntryExtensionV1Ext(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::ClaimableBalanceEntry => Ok(Self::ClaimableBalanceEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimableBalanceEntryExt => Ok(Self::ClaimableBalanceEntryExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LiquidityPoolConstantProductParameters => {
+                Ok(Self::LiquidityPoolConstantProductParameters(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::LiquidityPoolEntry => Ok(Self::LiquidityPoolEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LiquidityPoolEntryBody => Ok(Self::LiquidityPoolEntryBody(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LiquidityPoolEntryConstantProduct => {
+                Ok(Self::LiquidityPoolEntryConstantProduct(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::ContractDataDurability => Ok(Self::ContractDataDurability(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractDataEntry => Ok(Self::ContractDataEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractCodeCostInputs => Ok(Self::ContractCodeCostInputs(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractCodeEntry => Ok(Self::ContractCodeEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractCodeEntryExt => Ok(Self::ContractCodeEntryExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractCodeEntryV1 => Ok(Self::ContractCodeEntryV1(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TtlEntry => Ok(Self::TtlEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerEntryExtensionV1 => Ok(Self::LedgerEntryExtensionV1(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerEntryExtensionV1Ext => Ok(Self::LedgerEntryExtensionV1Ext(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::LedgerEntry => Ok(Self::LedgerEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerEntryData => Ok(Self::LedgerEntryData(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerEntryExt => Ok(Self::LedgerEntryExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerKey => Ok(Self::LedgerKey(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerKeyAccount => Ok(Self::LedgerKeyAccount(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerKeyTrustLine => Ok(Self::LedgerKeyTrustLine(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerKeyOffer => Ok(Self::LedgerKeyOffer(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerKeyData => Ok(Self::LedgerKeyData(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerKeyClaimableBalance => Ok(Self::LedgerKeyClaimableBalance(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::LedgerKeyLiquidityPool => Ok(Self::LedgerKeyLiquidityPool(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerKeyContractData => Ok(Self::LedgerKeyContractData(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerKeyContractCode => Ok(Self::LedgerKeyContractCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerKeyConfigSetting => Ok(Self::LedgerKeyConfigSetting(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerKeyTtl => Ok(Self::LedgerKeyTtl(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::EnvelopeType => Ok(Self::EnvelopeType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::BucketListType => Ok(Self::BucketListType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::BucketEntryType => Ok(Self::BucketEntryType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::HotArchiveBucketEntryType => Ok(Self::HotArchiveBucketEntryType(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::ColdArchiveBucketEntryType => Ok(Self::ColdArchiveBucketEntryType(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::BucketMetadata => Ok(Self::BucketMetadata(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::BucketMetadataExt => Ok(Self::BucketMetadataExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::BucketEntry => Ok(Self::BucketEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::HotArchiveBucketEntry => Ok(Self::HotArchiveBucketEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ColdArchiveArchivedLeaf => Ok(Self::ColdArchiveArchivedLeaf(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ColdArchiveDeletedLeaf => Ok(Self::ColdArchiveDeletedLeaf(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ColdArchiveBoundaryLeaf => Ok(Self::ColdArchiveBoundaryLeaf(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ColdArchiveHashEntry => Ok(Self::ColdArchiveHashEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ColdArchiveBucketEntry => Ok(Self::ColdArchiveBucketEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::UpgradeType => Ok(Self::UpgradeType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::StellarValueType => Ok(Self::StellarValueType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerCloseValueSignature => Ok(Self::LedgerCloseValueSignature(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::StellarValue => Ok(Self::StellarValue(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::StellarValueExt => Ok(Self::StellarValueExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerHeaderFlags => Ok(Self::LedgerHeaderFlags(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerHeaderExtensionV1 => Ok(Self::LedgerHeaderExtensionV1(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerHeaderExtensionV1Ext => Ok(Self::LedgerHeaderExtensionV1Ext(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::LedgerHeader => Ok(Self::LedgerHeader(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerHeaderExt => Ok(Self::LedgerHeaderExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerUpgradeType => Ok(Self::LedgerUpgradeType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ConfigUpgradeSetKey => Ok(Self::ConfigUpgradeSetKey(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerUpgrade => Ok(Self::LedgerUpgrade(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ConfigUpgradeSet => Ok(Self::ConfigUpgradeSet(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TxSetComponentType => Ok(Self::TxSetComponentType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TxSetComponent => Ok(Self::TxSetComponent(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TxSetComponentTxsMaybeDiscountedFee => {
+                Ok(Self::TxSetComponentTxsMaybeDiscountedFee(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::TransactionPhase => Ok(Self::TransactionPhase(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionSet => Ok(Self::TransactionSet(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionSetV1 => Ok(Self::TransactionSetV1(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::GeneralizedTransactionSet => Ok(Self::GeneralizedTransactionSet(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::TransactionResultPair => Ok(Self::TransactionResultPair(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionResultSet => Ok(Self::TransactionResultSet(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionHistoryEntry => Ok(Self::TransactionHistoryEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionHistoryEntryExt => Ok(Self::TransactionHistoryEntryExt(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::TransactionHistoryResultEntry => Ok(Self::TransactionHistoryResultEntry(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::TransactionHistoryResultEntryExt => {
+                Ok(Self::TransactionHistoryResultEntryExt(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::LedgerHeaderHistoryEntry => Ok(Self::LedgerHeaderHistoryEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerHeaderHistoryEntryExt => Ok(Self::LedgerHeaderHistoryEntryExt(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::LedgerScpMessages => Ok(Self::LedgerScpMessages(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScpHistoryEntryV0 => Ok(Self::ScpHistoryEntryV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ScpHistoryEntry => Ok(Self::ScpHistoryEntry(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerEntryChangeType => Ok(Self::LedgerEntryChangeType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerEntryChange => Ok(Self::LedgerEntryChange(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerEntryChanges => Ok(Self::LedgerEntryChanges(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::OperationMeta => Ok(Self::OperationMeta(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionMetaV1 => Ok(Self::TransactionMetaV1(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionMetaV2 => Ok(Self::TransactionMetaV2(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractEventType => Ok(Self::ContractEventType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractEvent => Ok(Self::ContractEvent(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractEventBody => Ok(Self::ContractEventBody(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractEventV0 => Ok(Self::ContractEventV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::DiagnosticEvent => Ok(Self::DiagnosticEvent(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::DiagnosticEvents => Ok(Self::DiagnosticEvents(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SorobanTransactionMetaExtV1 => Ok(Self::SorobanTransactionMetaExtV1(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::SorobanTransactionMetaExt => Ok(Self::SorobanTransactionMetaExt(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::SorobanTransactionMeta => Ok(Self::SorobanTransactionMeta(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionMetaV3 => Ok(Self::TransactionMetaV3(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::InvokeHostFunctionSuccessPreImage => {
+                Ok(Self::InvokeHostFunctionSuccessPreImage(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::TransactionMeta => Ok(Self::TransactionMeta(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionResultMeta => Ok(Self::TransactionResultMeta(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::UpgradeEntryMeta => Ok(Self::UpgradeEntryMeta(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerCloseMetaV0 => Ok(Self::LedgerCloseMetaV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerCloseMetaExtV1 => Ok(Self::LedgerCloseMetaExtV1(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerCloseMetaExt => Ok(Self::LedgerCloseMetaExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerCloseMetaV1 => Ok(Self::LedgerCloseMetaV1(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerCloseMeta => Ok(Self::LedgerCloseMeta(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ErrorCode => Ok(Self::ErrorCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SError => Ok(Self::SError(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::SendMore => Ok(Self::SendMore(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SendMoreExtended => Ok(Self::SendMoreExtended(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AuthCert => Ok(Self::AuthCert(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Hello => Ok(Self::Hello(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::Auth => Ok(Self::Auth(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::IpAddrType => Ok(Self::IpAddrType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PeerAddress => Ok(Self::PeerAddress(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PeerAddressIp => Ok(Self::PeerAddressIp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::MessageType => Ok(Self::MessageType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::DontHave => Ok(Self::DontHave(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SurveyMessageCommandType => Ok(Self::SurveyMessageCommandType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SurveyMessageResponseType => Ok(Self::SurveyMessageResponseType(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::TimeSlicedSurveyStartCollectingMessage => {
+                Ok(Self::TimeSlicedSurveyStartCollectingMessage(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::SignedTimeSlicedSurveyStartCollectingMessage => {
+                Ok(Self::SignedTimeSlicedSurveyStartCollectingMessage(
+                    Box::new(serde::de::Deserialize::deserialize(r)?),
+                ))
+            }
+            TypeVariant::TimeSlicedSurveyStopCollectingMessage => {
+                Ok(Self::TimeSlicedSurveyStopCollectingMessage(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::SignedTimeSlicedSurveyStopCollectingMessage => {
+                Ok(Self::SignedTimeSlicedSurveyStopCollectingMessage(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::SurveyRequestMessage => Ok(Self::SurveyRequestMessage(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TimeSlicedSurveyRequestMessage => {
+                Ok(Self::TimeSlicedSurveyRequestMessage(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::SignedSurveyRequestMessage => Ok(Self::SignedSurveyRequestMessage(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::SignedTimeSlicedSurveyRequestMessage => {
+                Ok(Self::SignedTimeSlicedSurveyRequestMessage(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::EncryptedBody => Ok(Self::EncryptedBody(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SurveyResponseMessage => Ok(Self::SurveyResponseMessage(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TimeSlicedSurveyResponseMessage => {
+                Ok(Self::TimeSlicedSurveyResponseMessage(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::SignedSurveyResponseMessage => Ok(Self::SignedSurveyResponseMessage(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::SignedTimeSlicedSurveyResponseMessage => {
+                Ok(Self::SignedTimeSlicedSurveyResponseMessage(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::PeerStats => Ok(Self::PeerStats(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PeerStatList => Ok(Self::PeerStatList(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TimeSlicedNodeData => Ok(Self::TimeSlicedNodeData(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TimeSlicedPeerData => Ok(Self::TimeSlicedPeerData(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TimeSlicedPeerDataList => Ok(Self::TimeSlicedPeerDataList(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TopologyResponseBodyV0 => Ok(Self::TopologyResponseBodyV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TopologyResponseBodyV1 => Ok(Self::TopologyResponseBodyV1(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TopologyResponseBodyV2 => Ok(Self::TopologyResponseBodyV2(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SurveyResponseBody => Ok(Self::SurveyResponseBody(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TxAdvertVector => Ok(Self::TxAdvertVector(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::FloodAdvert => Ok(Self::FloodAdvert(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TxDemandVector => Ok(Self::TxDemandVector(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::FloodDemand => Ok(Self::FloodDemand(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::StellarMessage => Ok(Self::StellarMessage(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AuthenticatedMessage => Ok(Self::AuthenticatedMessage(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AuthenticatedMessageV0 => Ok(Self::AuthenticatedMessageV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LiquidityPoolParameters => Ok(Self::LiquidityPoolParameters(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::MuxedAccount => Ok(Self::MuxedAccount(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::MuxedAccountMed25519 => Ok(Self::MuxedAccountMed25519(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::DecoratedSignature => Ok(Self::DecoratedSignature(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::OperationType => Ok(Self::OperationType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::CreateAccountOp => Ok(Self::CreateAccountOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PaymentOp => Ok(Self::PaymentOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PathPaymentStrictReceiveOp => Ok(Self::PathPaymentStrictReceiveOp(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::PathPaymentStrictSendOp => Ok(Self::PathPaymentStrictSendOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ManageSellOfferOp => Ok(Self::ManageSellOfferOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ManageBuyOfferOp => Ok(Self::ManageBuyOfferOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::CreatePassiveSellOfferOp => Ok(Self::CreatePassiveSellOfferOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SetOptionsOp => Ok(Self::SetOptionsOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ChangeTrustAsset => Ok(Self::ChangeTrustAsset(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ChangeTrustOp => Ok(Self::ChangeTrustOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AllowTrustOp => Ok(Self::AllowTrustOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ManageDataOp => Ok(Self::ManageDataOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::BumpSequenceOp => Ok(Self::BumpSequenceOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::CreateClaimableBalanceOp => Ok(Self::CreateClaimableBalanceOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimClaimableBalanceOp => Ok(Self::ClaimClaimableBalanceOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::BeginSponsoringFutureReservesOp => {
+                Ok(Self::BeginSponsoringFutureReservesOp(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::RevokeSponsorshipType => Ok(Self::RevokeSponsorshipType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::RevokeSponsorshipOp => Ok(Self::RevokeSponsorshipOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::RevokeSponsorshipOpSigner => Ok(Self::RevokeSponsorshipOpSigner(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::ClawbackOp => Ok(Self::ClawbackOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClawbackClaimableBalanceOp => Ok(Self::ClawbackClaimableBalanceOp(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::SetTrustLineFlagsOp => Ok(Self::SetTrustLineFlagsOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LiquidityPoolDepositOp => Ok(Self::LiquidityPoolDepositOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LiquidityPoolWithdrawOp => Ok(Self::LiquidityPoolWithdrawOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::HostFunctionType => Ok(Self::HostFunctionType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractIdPreimageType => Ok(Self::ContractIdPreimageType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractIdPreimage => Ok(Self::ContractIdPreimage(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ContractIdPreimageFromAddress => Ok(Self::ContractIdPreimageFromAddress(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::CreateContractArgs => Ok(Self::CreateContractArgs(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::CreateContractArgsV2 => Ok(Self::CreateContractArgsV2(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::InvokeContractArgs => Ok(Self::InvokeContractArgs(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::HostFunction => Ok(Self::HostFunction(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SorobanAuthorizedFunctionType => Ok(Self::SorobanAuthorizedFunctionType(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::SorobanAuthorizedFunction => Ok(Self::SorobanAuthorizedFunction(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::SorobanAuthorizedInvocation => Ok(Self::SorobanAuthorizedInvocation(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::SorobanAddressCredentials => Ok(Self::SorobanAddressCredentials(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::SorobanCredentialsType => Ok(Self::SorobanCredentialsType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SorobanCredentials => Ok(Self::SorobanCredentials(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SorobanAuthorizationEntry => Ok(Self::SorobanAuthorizationEntry(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::InvokeHostFunctionOp => Ok(Self::InvokeHostFunctionOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ExtendFootprintTtlOp => Ok(Self::ExtendFootprintTtlOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::RestoreFootprintOp => Ok(Self::RestoreFootprintOp(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Operation => Ok(Self::Operation(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::OperationBody => Ok(Self::OperationBody(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::HashIdPreimage => Ok(Self::HashIdPreimage(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::HashIdPreimageOperationId => Ok(Self::HashIdPreimageOperationId(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::HashIdPreimageRevokeId => Ok(Self::HashIdPreimageRevokeId(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::HashIdPreimageContractId => Ok(Self::HashIdPreimageContractId(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::HashIdPreimageSorobanAuthorization => {
+                Ok(Self::HashIdPreimageSorobanAuthorization(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::MemoType => Ok(Self::MemoType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Memo => Ok(Self::Memo(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::TimeBounds => Ok(Self::TimeBounds(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerBounds => Ok(Self::LedgerBounds(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PreconditionsV2 => Ok(Self::PreconditionsV2(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PreconditionType => Ok(Self::PreconditionType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Preconditions => Ok(Self::Preconditions(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LedgerFootprint => Ok(Self::LedgerFootprint(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ArchivalProofType => Ok(Self::ArchivalProofType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ArchivalProofNode => Ok(Self::ArchivalProofNode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ProofLevel => Ok(Self::ProofLevel(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::NonexistenceProofBody => Ok(Self::NonexistenceProofBody(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ExistenceProofBody => Ok(Self::ExistenceProofBody(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ArchivalProof => Ok(Self::ArchivalProof(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ArchivalProofBody => Ok(Self::ArchivalProofBody(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SorobanResources => Ok(Self::SorobanResources(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SorobanTransactionData => Ok(Self::SorobanTransactionData(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionV0 => Ok(Self::TransactionV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionV0Ext => Ok(Self::TransactionV0Ext(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionV0Envelope => Ok(Self::TransactionV0Envelope(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Transaction => Ok(Self::Transaction(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionExt => Ok(Self::TransactionExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionV1Envelope => Ok(Self::TransactionV1Envelope(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::FeeBumpTransaction => Ok(Self::FeeBumpTransaction(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::FeeBumpTransactionInnerTx => Ok(Self::FeeBumpTransactionInnerTx(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::FeeBumpTransactionExt => Ok(Self::FeeBumpTransactionExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::FeeBumpTransactionEnvelope => Ok(Self::FeeBumpTransactionEnvelope(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::TransactionEnvelope => Ok(Self::TransactionEnvelope(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionSignaturePayload => Ok(Self::TransactionSignaturePayload(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::TransactionSignaturePayloadTaggedTransaction => {
+                Ok(Self::TransactionSignaturePayloadTaggedTransaction(
+                    Box::new(serde::de::Deserialize::deserialize(r)?),
+                ))
+            }
+            TypeVariant::ClaimAtomType => Ok(Self::ClaimAtomType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimOfferAtomV0 => Ok(Self::ClaimOfferAtomV0(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimOfferAtom => Ok(Self::ClaimOfferAtom(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimLiquidityAtom => Ok(Self::ClaimLiquidityAtom(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClaimAtom => Ok(Self::ClaimAtom(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::CreateAccountResultCode => Ok(Self::CreateAccountResultCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::CreateAccountResult => Ok(Self::CreateAccountResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PaymentResultCode => Ok(Self::PaymentResultCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PaymentResult => Ok(Self::PaymentResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PathPaymentStrictReceiveResultCode => {
+                Ok(Self::PathPaymentStrictReceiveResultCode(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::SimplePaymentResult => Ok(Self::SimplePaymentResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PathPaymentStrictReceiveResult => {
+                Ok(Self::PathPaymentStrictReceiveResult(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::PathPaymentStrictReceiveResultSuccess => {
+                Ok(Self::PathPaymentStrictReceiveResultSuccess(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::PathPaymentStrictSendResultCode => {
+                Ok(Self::PathPaymentStrictSendResultCode(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::PathPaymentStrictSendResult => Ok(Self::PathPaymentStrictSendResult(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::PathPaymentStrictSendResultSuccess => {
+                Ok(Self::PathPaymentStrictSendResultSuccess(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::ManageSellOfferResultCode => Ok(Self::ManageSellOfferResultCode(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::ManageOfferEffect => Ok(Self::ManageOfferEffect(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ManageOfferSuccessResult => Ok(Self::ManageOfferSuccessResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ManageOfferSuccessResultOffer => Ok(Self::ManageOfferSuccessResultOffer(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::ManageSellOfferResult => Ok(Self::ManageSellOfferResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ManageBuyOfferResultCode => Ok(Self::ManageBuyOfferResultCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ManageBuyOfferResult => Ok(Self::ManageBuyOfferResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SetOptionsResultCode => Ok(Self::SetOptionsResultCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SetOptionsResult => Ok(Self::SetOptionsResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ChangeTrustResultCode => Ok(Self::ChangeTrustResultCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ChangeTrustResult => Ok(Self::ChangeTrustResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AllowTrustResultCode => Ok(Self::AllowTrustResultCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AllowTrustResult => Ok(Self::AllowTrustResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AccountMergeResultCode => Ok(Self::AccountMergeResultCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::AccountMergeResult => Ok(Self::AccountMergeResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::InflationResultCode => Ok(Self::InflationResultCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::InflationPayout => Ok(Self::InflationPayout(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::InflationResult => Ok(Self::InflationResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ManageDataResultCode => Ok(Self::ManageDataResultCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ManageDataResult => Ok(Self::ManageDataResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::BumpSequenceResultCode => Ok(Self::BumpSequenceResultCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::BumpSequenceResult => Ok(Self::BumpSequenceResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::CreateClaimableBalanceResultCode => {
+                Ok(Self::CreateClaimableBalanceResultCode(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::CreateClaimableBalanceResult => Ok(Self::CreateClaimableBalanceResult(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::ClaimClaimableBalanceResultCode => {
+                Ok(Self::ClaimClaimableBalanceResultCode(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::ClaimClaimableBalanceResult => Ok(Self::ClaimClaimableBalanceResult(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::BeginSponsoringFutureReservesResultCode => {
+                Ok(Self::BeginSponsoringFutureReservesResultCode(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::BeginSponsoringFutureReservesResult => {
+                Ok(Self::BeginSponsoringFutureReservesResult(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::EndSponsoringFutureReservesResultCode => {
+                Ok(Self::EndSponsoringFutureReservesResultCode(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::EndSponsoringFutureReservesResult => {
+                Ok(Self::EndSponsoringFutureReservesResult(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::RevokeSponsorshipResultCode => Ok(Self::RevokeSponsorshipResultCode(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::RevokeSponsorshipResult => Ok(Self::RevokeSponsorshipResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClawbackResultCode => Ok(Self::ClawbackResultCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClawbackResult => Ok(Self::ClawbackResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ClawbackClaimableBalanceResultCode => {
+                Ok(Self::ClawbackClaimableBalanceResultCode(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::ClawbackClaimableBalanceResult => {
+                Ok(Self::ClawbackClaimableBalanceResult(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::SetTrustLineFlagsResultCode => Ok(Self::SetTrustLineFlagsResultCode(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::SetTrustLineFlagsResult => Ok(Self::SetTrustLineFlagsResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::LiquidityPoolDepositResultCode => {
+                Ok(Self::LiquidityPoolDepositResultCode(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::LiquidityPoolDepositResult => Ok(Self::LiquidityPoolDepositResult(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::LiquidityPoolWithdrawResultCode => {
+                Ok(Self::LiquidityPoolWithdrawResultCode(Box::new(
+                    serde::de::Deserialize::deserialize(r)?,
+                )))
+            }
+            TypeVariant::LiquidityPoolWithdrawResult => Ok(Self::LiquidityPoolWithdrawResult(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::InvokeHostFunctionResultCode => Ok(Self::InvokeHostFunctionResultCode(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::InvokeHostFunctionResult => Ok(Self::InvokeHostFunctionResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ExtendFootprintTtlResultCode => Ok(Self::ExtendFootprintTtlResultCode(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::ExtendFootprintTtlResult => Ok(Self::ExtendFootprintTtlResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::RestoreFootprintResultCode => Ok(Self::RestoreFootprintResultCode(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::RestoreFootprintResult => Ok(Self::RestoreFootprintResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::OperationResultCode => Ok(Self::OperationResultCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::OperationResult => Ok(Self::OperationResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::OperationResultTr => Ok(Self::OperationResultTr(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionResultCode => Ok(Self::TransactionResultCode(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::InnerTransactionResult => Ok(Self::InnerTransactionResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::InnerTransactionResultResult => Ok(Self::InnerTransactionResultResult(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::InnerTransactionResultExt => Ok(Self::InnerTransactionResultExt(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::InnerTransactionResultPair => Ok(Self::InnerTransactionResultPair(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::TransactionResult => Ok(Self::TransactionResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionResultResult => Ok(Self::TransactionResultResult(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::TransactionResultExt => Ok(Self::TransactionResultExt(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Hash => Ok(Self::Hash(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::Uint256 => Ok(Self::Uint256(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Uint32 => Ok(Self::Uint32(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::Int32 => Ok(Self::Int32(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::Uint64 => Ok(Self::Uint64(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::Int64 => Ok(Self::Int64(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::TimePoint => Ok(Self::TimePoint(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Duration => Ok(Self::Duration(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ExtensionPoint => Ok(Self::ExtensionPoint(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::CryptoKeyType => Ok(Self::CryptoKeyType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PublicKeyType => Ok(Self::PublicKeyType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SignerKeyType => Ok(Self::SignerKeyType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::PublicKey => Ok(Self::PublicKey(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SignerKey => Ok(Self::SignerKey(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SignerKeyEd25519SignedPayload => Ok(Self::SignerKeyEd25519SignedPayload(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+            TypeVariant::Signature => Ok(Self::Signature(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SignatureHint => Ok(Self::SignatureHint(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::NodeId => Ok(Self::NodeId(Box::new(serde::de::Deserialize::deserialize(
+                r,
+            )?))),
+            TypeVariant::AccountId => Ok(Self::AccountId(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Curve25519Secret => Ok(Self::Curve25519Secret(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::Curve25519Public => Ok(Self::Curve25519Public(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::HmacSha256Key => Ok(Self::HmacSha256Key(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::HmacSha256Mac => Ok(Self::HmacSha256Mac(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::ShortHashSeed => Ok(Self::ShortHashSeed(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::BinaryFuseFilterType => Ok(Self::BinaryFuseFilterType(Box::new(
+                serde::de::Deserialize::deserialize(r)?,
+            ))),
+            TypeVariant::SerializedBinaryFuseFilter => Ok(Self::SerializedBinaryFuseFilter(
+                Box::new(serde::de::Deserialize::deserialize(r)?),
+            )),
+        }
+    }
+
     #[cfg(feature = "alloc")]
     #[must_use]
     #[allow(clippy::too_many_lines)]
@@ -60451,7 +61445,6 @@ impl Type {
             Self::ScpQuorumSet(ref v) => v.as_ref(),
             Self::ConfigSettingContractExecutionLanesV0(ref v) => v.as_ref(),
             Self::ConfigSettingContractComputeV0(ref v) => v.as_ref(),
-            Self::ConfigSettingContractParallelComputeV0(ref v) => v.as_ref(),
             Self::ConfigSettingContractLedgerCostV0(ref v) => v.as_ref(),
             Self::ConfigSettingContractHistoricalDataV0(ref v) => v.as_ref(),
             Self::ConfigSettingContractEventsV0(ref v) => v.as_ref(),
@@ -60627,9 +61620,6 @@ impl Type {
             Self::LedgerUpgrade(ref v) => v.as_ref(),
             Self::ConfigUpgradeSet(ref v) => v.as_ref(),
             Self::TxSetComponentType(ref v) => v.as_ref(),
-            Self::TxExecutionThread(ref v) => v.as_ref(),
-            Self::ParallelTxExecutionStage(ref v) => v.as_ref(),
-            Self::ParallelTxsComponent(ref v) => v.as_ref(),
             Self::TxSetComponent(ref v) => v.as_ref(),
             Self::TxSetComponentTxsMaybeDiscountedFee(ref v) => v.as_ref(),
             Self::TransactionPhase(ref v) => v.as_ref(),
@@ -60658,6 +61648,7 @@ impl Type {
             Self::ContractEventBody(ref v) => v.as_ref(),
             Self::ContractEventV0(ref v) => v.as_ref(),
             Self::DiagnosticEvent(ref v) => v.as_ref(),
+            Self::DiagnosticEvents(ref v) => v.as_ref(),
             Self::SorobanTransactionMetaExtV1(ref v) => v.as_ref(),
             Self::SorobanTransactionMetaExt(ref v) => v.as_ref(),
             Self::SorobanTransactionMeta(ref v) => v.as_ref(),
@@ -60785,7 +61776,6 @@ impl Type {
             Self::ArchivalProofBody(ref v) => v.as_ref(),
             Self::SorobanResources(ref v) => v.as_ref(),
             Self::SorobanTransactionData(ref v) => v.as_ref(),
-            Self::SorobanTransactionDataExt(ref v) => v.as_ref(),
             Self::TransactionV0(ref v) => v.as_ref(),
             Self::TransactionV0Ext(ref v) => v.as_ref(),
             Self::TransactionV0Envelope(ref v) => v.as_ref(),
@@ -60922,9 +61912,6 @@ impl Type {
                 "ConfigSettingContractExecutionLanesV0"
             }
             Self::ConfigSettingContractComputeV0(_) => "ConfigSettingContractComputeV0",
-            Self::ConfigSettingContractParallelComputeV0(_) => {
-                "ConfigSettingContractParallelComputeV0"
-            }
             Self::ConfigSettingContractLedgerCostV0(_) => "ConfigSettingContractLedgerCostV0",
             Self::ConfigSettingContractHistoricalDataV0(_) => {
                 "ConfigSettingContractHistoricalDataV0"
@@ -61104,9 +62091,6 @@ impl Type {
             Self::LedgerUpgrade(_) => "LedgerUpgrade",
             Self::ConfigUpgradeSet(_) => "ConfigUpgradeSet",
             Self::TxSetComponentType(_) => "TxSetComponentType",
-            Self::TxExecutionThread(_) => "TxExecutionThread",
-            Self::ParallelTxExecutionStage(_) => "ParallelTxExecutionStage",
-            Self::ParallelTxsComponent(_) => "ParallelTxsComponent",
             Self::TxSetComponent(_) => "TxSetComponent",
             Self::TxSetComponentTxsMaybeDiscountedFee(_) => "TxSetComponentTxsMaybeDiscountedFee",
             Self::TransactionPhase(_) => "TransactionPhase",
@@ -61135,6 +62119,7 @@ impl Type {
             Self::ContractEventBody(_) => "ContractEventBody",
             Self::ContractEventV0(_) => "ContractEventV0",
             Self::DiagnosticEvent(_) => "DiagnosticEvent",
+            Self::DiagnosticEvents(_) => "DiagnosticEvents",
             Self::SorobanTransactionMetaExtV1(_) => "SorobanTransactionMetaExtV1",
             Self::SorobanTransactionMetaExt(_) => "SorobanTransactionMetaExt",
             Self::SorobanTransactionMeta(_) => "SorobanTransactionMeta",
@@ -61272,7 +62257,6 @@ impl Type {
             Self::ArchivalProofBody(_) => "ArchivalProofBody",
             Self::SorobanResources(_) => "SorobanResources",
             Self::SorobanTransactionData(_) => "SorobanTransactionData",
-            Self::SorobanTransactionDataExt(_) => "SorobanTransactionDataExt",
             Self::TransactionV0(_) => "TransactionV0",
             Self::TransactionV0Ext(_) => "TransactionV0Ext",
             Self::TransactionV0Envelope(_) => "TransactionV0Envelope",
@@ -61400,7 +62384,7 @@ impl Type {
 
     #[must_use]
     #[allow(clippy::too_many_lines)]
-    pub const fn variants() -> [TypeVariant; 462] {
+    pub const fn variants() -> [TypeVariant; 458] {
         Self::VARIANTS
     }
 
@@ -61423,9 +62407,6 @@ impl Type {
                 TypeVariant::ConfigSettingContractExecutionLanesV0
             }
             Self::ConfigSettingContractComputeV0(_) => TypeVariant::ConfigSettingContractComputeV0,
-            Self::ConfigSettingContractParallelComputeV0(_) => {
-                TypeVariant::ConfigSettingContractParallelComputeV0
-            }
             Self::ConfigSettingContractLedgerCostV0(_) => {
                 TypeVariant::ConfigSettingContractLedgerCostV0
             }
@@ -61615,9 +62596,6 @@ impl Type {
             Self::LedgerUpgrade(_) => TypeVariant::LedgerUpgrade,
             Self::ConfigUpgradeSet(_) => TypeVariant::ConfigUpgradeSet,
             Self::TxSetComponentType(_) => TypeVariant::TxSetComponentType,
-            Self::TxExecutionThread(_) => TypeVariant::TxExecutionThread,
-            Self::ParallelTxExecutionStage(_) => TypeVariant::ParallelTxExecutionStage,
-            Self::ParallelTxsComponent(_) => TypeVariant::ParallelTxsComponent,
             Self::TxSetComponent(_) => TypeVariant::TxSetComponent,
             Self::TxSetComponentTxsMaybeDiscountedFee(_) => {
                 TypeVariant::TxSetComponentTxsMaybeDiscountedFee
@@ -61650,6 +62628,7 @@ impl Type {
             Self::ContractEventBody(_) => TypeVariant::ContractEventBody,
             Self::ContractEventV0(_) => TypeVariant::ContractEventV0,
             Self::DiagnosticEvent(_) => TypeVariant::DiagnosticEvent,
+            Self::DiagnosticEvents(_) => TypeVariant::DiagnosticEvents,
             Self::SorobanTransactionMetaExtV1(_) => TypeVariant::SorobanTransactionMetaExtV1,
             Self::SorobanTransactionMetaExt(_) => TypeVariant::SorobanTransactionMetaExt,
             Self::SorobanTransactionMeta(_) => TypeVariant::SorobanTransactionMeta,
@@ -61797,7 +62776,6 @@ impl Type {
             Self::ArchivalProofBody(_) => TypeVariant::ArchivalProofBody,
             Self::SorobanResources(_) => TypeVariant::SorobanResources,
             Self::SorobanTransactionData(_) => TypeVariant::SorobanTransactionData,
-            Self::SorobanTransactionDataExt(_) => TypeVariant::SorobanTransactionDataExt,
             Self::TransactionV0(_) => TypeVariant::TransactionV0,
             Self::TransactionV0Ext(_) => TypeVariant::TransactionV0Ext,
             Self::TransactionV0Envelope(_) => TypeVariant::TransactionV0Envelope,
@@ -61956,7 +62934,7 @@ impl Variants<TypeVariant> for Type {
 }
 
 impl WriteXdr for Type {
-    #[cfg(feature = "std")]
+    #[cfg(any(feature = "std", feature = "no_std"))]
     #[allow(clippy::too_many_lines)]
     fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<()> {
         match self {
@@ -61973,7 +62951,6 @@ impl WriteXdr for Type {
             Self::ScpQuorumSet(v) => v.write_xdr(w),
             Self::ConfigSettingContractExecutionLanesV0(v) => v.write_xdr(w),
             Self::ConfigSettingContractComputeV0(v) => v.write_xdr(w),
-            Self::ConfigSettingContractParallelComputeV0(v) => v.write_xdr(w),
             Self::ConfigSettingContractLedgerCostV0(v) => v.write_xdr(w),
             Self::ConfigSettingContractHistoricalDataV0(v) => v.write_xdr(w),
             Self::ConfigSettingContractEventsV0(v) => v.write_xdr(w),
@@ -62149,9 +63126,6 @@ impl WriteXdr for Type {
             Self::LedgerUpgrade(v) => v.write_xdr(w),
             Self::ConfigUpgradeSet(v) => v.write_xdr(w),
             Self::TxSetComponentType(v) => v.write_xdr(w),
-            Self::TxExecutionThread(v) => v.write_xdr(w),
-            Self::ParallelTxExecutionStage(v) => v.write_xdr(w),
-            Self::ParallelTxsComponent(v) => v.write_xdr(w),
             Self::TxSetComponent(v) => v.write_xdr(w),
             Self::TxSetComponentTxsMaybeDiscountedFee(v) => v.write_xdr(w),
             Self::TransactionPhase(v) => v.write_xdr(w),
@@ -62180,6 +63154,7 @@ impl WriteXdr for Type {
             Self::ContractEventBody(v) => v.write_xdr(w),
             Self::ContractEventV0(v) => v.write_xdr(w),
             Self::DiagnosticEvent(v) => v.write_xdr(w),
+            Self::DiagnosticEvents(v) => v.write_xdr(w),
             Self::SorobanTransactionMetaExtV1(v) => v.write_xdr(w),
             Self::SorobanTransactionMetaExt(v) => v.write_xdr(w),
             Self::SorobanTransactionMeta(v) => v.write_xdr(w),
@@ -62307,7 +63282,6 @@ impl WriteXdr for Type {
             Self::ArchivalProofBody(v) => v.write_xdr(w),
             Self::SorobanResources(v) => v.write_xdr(w),
             Self::SorobanTransactionData(v) => v.write_xdr(w),
-            Self::SorobanTransactionDataExt(v) => v.write_xdr(w),
             Self::TransactionV0(v) => v.write_xdr(w),
             Self::TransactionV0Ext(v) => v.write_xdr(w),
             Self::TransactionV0Envelope(v) => v.write_xdr(w),
