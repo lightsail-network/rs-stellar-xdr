@@ -648,10 +648,10 @@ pub trait WriteXdr {
 
     #[cfg(any(feature = "std", feature = "no_std"))]
     fn to_xdr(&self, limits: Limits) -> Result<Vec<u8>> {
-        let mut cursor = Limited::new(Cursor::new(vec![]), limits);
+        let mut buf = Vec::new();
+        let mut cursor = Limited::new(Cursor::new(&mut buf), limits);
         self.write_xdr(&mut cursor)?;
-        let bytes = cursor.inner.into_inner();
-        Ok(bytes)
+        Ok(buf)
     }
 
     #[cfg(feature = "base64")]
