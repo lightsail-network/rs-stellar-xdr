@@ -34,9 +34,9 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "base32"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23ce669cd6c8588f79e15cf450314f9638f967fc5770ff1c7c1deb0925ea7cfa"
+checksum = "022dfe9eb35f19ebbcb51e0b40a5ab759f46ad60cadf7297e0bd085afb50e076"
 
 [[package]]
 name = "base64"
@@ -539,12 +539,10 @@ dependencies = [
 [[package]]
 name = "stellar-strkey"
 version = "0.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12d2bf45e114117ea91d820a846fd1afbe3ba7d717988fee094ce8227a3bf8bd"
+source = "git+https://github.com/lightsail-network/rs-stellar-strkey?rev=4608d1f36aab582210e92d9b5e0d5725f3d71814#4608d1f36aab582210e92d9b5e0d5725f3d71814"
 dependencies = [
  "base32",
  "crate-git-revision",
- "thiserror",
 ]
 
 [[package]]
