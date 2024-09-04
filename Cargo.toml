@@ -30,7 +30,7 @@ clap = { version = "4.2.4", default-features = false, features = ["std", "derive
 serde_json = { version = "1.0.89", optional = true }
 thiserror = { version = "1.0.37", optional = true }
 schemars = { version = "0.8.16", optional = true }
-embedded-io-cursor = { git = "https://github.com/lightsail-network/embedded-io-cursor", rev = "836e8b1272b93e709daaea09a4b672c77b2d0fc1", default-features = false }
+embedded-io-cursor = { git = "https://github.com/lightsail-network/embedded-io-cursor", rev = "0b7ff9270d7ec1d3204375650f04cb0258ac1ada", default-features = false }
 embedded-io = { version = "0.6.1", default-features = false }
 
 [dev-dependencies]
