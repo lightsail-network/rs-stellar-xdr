@@ -19,25 +19,27 @@ doctest = false
 crate-git-revision = "0.0.6"
 
 [dependencies]
-stellar-strkey = { version = "0.0.8", optional = true }
+stellar-strkey = { git = "https://github.com/lightsail-network/rs-stellar-strkey", rev = "4608d1f36aab582210e92d9b5e0d5725f3d71814", default-features = false, optional = true }
 base64 = { version = "0.13.0", optional = true }
 serde = { version = "1.0.139", features = ["derive"], optional = true }
 serde_with = { version = "3.0.0", optional = true }
 escape-bytes = { version = "0.1.1", default-features = false }
 hex = { version = "0.4.3", optional = true }
-arbitrary = {version = "1.1.3", features = ["derive"], optional = true}
+arbitrary = { version = "1.1.3", features = ["derive"], optional = true }
 clap = { version = "4.2.4", default-features = false, features = ["std", "derive", "usage", "help"], optional = true }
 serde_json = { version = "1.0.89", optional = true }
 thiserror = { version = "1.0.37", optional = true }
 schemars = { version = "0.8.16", optional = true }
+embedded-io-cursor = { git = "https://github.com/lightsail-network/embedded-io-cursor", rev = "836e8b1272b93e709daaea09a4b672c77b2d0fc1", default-features = false }
+embedded-io = { version = "0.6.1", default-features = false }
 
 [dev-dependencies]
 serde_json = "1.0.89"
 
 [features]
 default = ["std", "curr"]
-std = ["alloc"]
-alloc = ["dep:hex", "dep:stellar-strkey", "escape-bytes/alloc"]
+std = ["alloc", "stellar-strkey/std"]
+alloc = ["dep:hex", "dep:stellar-strkey", "escape-bytes/alloc", "embedded-io-cursor/alloc"]
 curr = []
 next = []
 
