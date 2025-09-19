@@ -4,10 +4,11 @@ mod ledgerkey;
 pub use generated::*;
 
 mod default;
-mod jsonschema;
 mod str;
 
+#[cfg(feature = "alloc")]
 mod scval_conversions;
+#[cfg(feature = "alloc")]
 pub use scval_conversions::*;
 mod account_conversions;
 mod transaction_conversions;
@@ -19,4 +20,3 @@ pub use scval_validations::*;
 mod scmap;
 
 mod tx_auths;
-mod tx_hash;

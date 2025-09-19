@@ -1,11 +1,11 @@
 #![cfg(feature = "curr")]
-#![cfg(all(feature = "std", feature = "serde"))]
+#![cfg(all(feature = "alloc", feature = "serde"))]
 
 use stellar_xdr::curr as stellar_xdr;
 use stellar_xdr::{ConfigSettingEntry, ScNonceKey, ScVal, SequenceNumber};
 
 #[test]
-fn test_serde_typedef_64bit() -> Result<(), Box<dyn std::error::Error>> {
+fn test_serde_typedef_64bit() -> Result<(), stellar_xdr::Error> {
     let x = SequenceNumber(123);
     let s = serde_json::to_string(&x)?;
     println!("{s}");
@@ -16,7 +16,7 @@ fn test_serde_typedef_64bit() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn test_serde_union_64bit() -> Result<(), Box<dyn std::error::Error>> {
+fn test_serde_union_64bit() -> Result<(), stellar_xdr::Error> {
     let x = ScVal::I64(-123);
     let s = serde_json::to_string(&x)?;
     println!("{s}");
@@ -34,7 +34,7 @@ fn test_serde_union_64bit() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn test_serde_struct_field_64bit() -> Result<(), Box<dyn std::error::Error>> {
+fn test_serde_struct_field_64bit() -> Result<(), stellar_xdr::Error> {
     let x = ScNonceKey { nonce: 123 };
     let s = serde_json::to_string(&x)?;
     println!("{s}");
@@ -45,7 +45,7 @@ fn test_serde_struct_field_64bit() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn test_serde_vecm_containing_64bit_int() -> Result<(), Box<dyn std::error::Error>> {
+fn test_serde_vecm_containing_64bit_int() -> Result<(), stellar_xdr::Error> {
     let x = ConfigSettingEntry::LiveSorobanStateSizeWindow([1, 2, 3, u64::MAX].try_into()?);
     let s = serde_json::to_string_pretty(&x)?;
     println!("{s}");

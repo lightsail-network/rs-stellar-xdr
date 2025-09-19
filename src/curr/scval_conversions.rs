@@ -2,9 +2,7 @@ use super::{
     Int128Parts, ScBytes, ScError, ScMap, ScMapEntry, ScSymbol, ScVal, ScVec, UInt128Parts,
 };
 
-#[cfg(all(not(feature = "std"), feature = "alloc"))]
 extern crate alloc;
-#[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::{string::String, vec, vec::Vec};
 
 // TODO: Use the Error type for conversions in this file.

@@ -2,7 +2,7 @@
     any(feature = "curr", feature = "next"),
     not(all(feature = "curr", feature = "next"))
 ))]
-#![cfg(feature = "std")]
+#![cfg(feature = "alloc")]
 
 #[cfg(feature = "curr")]
 use stellar_xdr::curr as stellar_xdr;

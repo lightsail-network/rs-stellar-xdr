@@ -2,7 +2,7 @@
     any(feature = "curr", feature = "next"),
     not(all(feature = "curr", feature = "next"))
 ))]
-#![cfg(all(feature = "std", feature = "serde"))]
+#![cfg(all(feature = "alloc", feature = "serde"))]
 
 #[cfg(feature = "curr")]
 use stellar_xdr::curr as stellar_xdr;
@@ -15,10 +15,10 @@ use stellar_xdr::{BytesM, Hash, StringM, VecM};
 use stellar_xdr::{AccountId, Int128Parts};
 
 #[cfg(feature = "curr")]
-use std::str::FromStr;
+use core::str::FromStr;
 
 #[test]
-fn test_serde_ser() -> Result<(), Box<dyn std::error::Error>> {
+fn test_serde_ser() -> Result<(), stellar_xdr::Error> {
     assert_eq!(
         serde_json::to_string(&<_ as TryInto<VecM<u8>>>::try_into("hello world")?)?,
         "[104,101,108,108,111,32,119,111,114,108,100]"
@@ -48,7 +48,7 @@ fn test_serde_ser() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn test_serde_der() -> Result<(), Box<dyn std::error::Error>> {
+fn test_serde_der() -> Result<(), stellar_xdr::Error> {
     let v: VecM<u8> = serde_json::from_str("[104,101,108,108,111,32,119,111,114,108,100]")?;
     assert_eq!(v, <_ as TryInto<VecM<u8>>>::try_into("hello world")?);
 
@@ -77,7 +77,7 @@ fn test_serde_der() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(feature = "curr")]
 #[test]
-fn test_structs_that_ser_to_string_and_dual_der() -> Result<(), Box<dyn std::error::Error>> {
+fn test_structs_that_ser_to_string_and_dual_der() -> Result<(), stellar_xdr::Error> {
     assert_eq!(
         serde_json::to_string(&Int128Parts { hi: 1, lo: 2 })?,
         "\"18446744073709551618\"",

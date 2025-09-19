@@ -1,5 +1,8 @@
 # stellar-xdr
 
+>[!NOTE]
+> This fork is intended for use with Ledger devices. Use at your own risk.
+
 Library and CLI containing types and functionality for working with Stellar
 XDR.
 

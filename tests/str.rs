@@ -1,5 +1,5 @@
 #![cfg(feature = "curr")]
-#![cfg(feature = "std")]
+#![cfg(feature = "alloc")]
 
 use stellar_xdr::curr as stellar_xdr;
 

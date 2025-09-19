@@ -101,7 +101,6 @@ class Generator < Xdrgen::Generators::Base
       derive(serde::Serialize, serde::Deserialize),
       serde(rename_all = "snake_case")
     )]
-    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     pub enum TypeVariant {
         #{types.map { |t| "#{t}," }.join("\n")}
     }
@@ -122,15 +121,6 @@ class Generator < Xdrgen::Generators::Base
         #[allow(clippy::too_many_lines)]
         pub const fn variants() -> [TypeVariant; #{types.count}] {
             Self::VARIANTS
-        }
-
-        #[cfg(feature = "schemars")]
-        #[must_use]
-        #[allow(clippy::too_many_lines)]
-        pub fn json_schema(&self, gen: schemars::gen::SchemaGenerator) -> schemars::schema::RootSchema {
-            match self {
-                #{types.map { |t| "Self::#{t} => gen.into_root_schema_for::<#{t}>()," }.join("\n")}
-            }
         }
     }
 
@@ -165,7 +155,6 @@ class Generator < Xdrgen::Generators::Base
       serde(rename_all = "snake_case"),
       serde(untagged),
     )]
-    #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
     pub enum Type {
         #{types.map { |t| "#{t}(Box<#{t}>)," }.join("\n")}
     }
@@ -174,7 +163,7 @@ class Generator < Xdrgen::Generators::Base
         pub const VARIANTS: [TypeVariant; #{types.count}] = [ #{types.map { |t| "TypeVariant::#{t}," }.join("\n")} ];
         pub const VARIANTS_STR: [&'static str; #{types.count}] = [ #{types.map { |t| "\"#{t}\"," }.join("\n")} ];
 
-        #[cfg(feature = "std")]
+        #[cfg(feature = "alloc")]
         #[allow(clippy::too_many_lines)]
         pub fn read_xdr<R: Read>(v: TypeVariant, r: &mut Limited<R>) -> Result<Self, Error> {
             match v {
@@ -182,20 +171,7 @@ class Generator < Xdrgen::Generators::Base
             }
         }
 
-        #[cfg(feature = "base64")]
-        pub fn read_xdr_base64<R: Read>(v: TypeVariant, r: &mut Limited<R>) -> Result<Self, Error> {
-            let mut dec = Limited::new(
-                base64::read::DecoderReader::new(
-                    SkipWhitespace::new(&mut r.inner),
-                    &base64::engine::general_purpose::STANDARD,
-                ),
-                r.limits.clone(),
-            );
-            let t = Self::read_xdr(v, &mut dec)?;
-            Ok(t)
-        }
-
-        #[cfg(feature = "std")]
+        #[cfg(feature = "alloc")]
         pub fn read_xdr_to_end<R: Read>(v: TypeVariant, r: &mut Limited<R>) -> Result<Self, Error> {
             let s = Self::read_xdr(v, r)?;
             // Check that any further reads, such as this read of one byte, read no
@@ -207,94 +183,20 @@ class Generator < Xdrgen::Generators::Base
             }
         }
 
-        #[cfg(feature = "base64")]
-        pub fn read_xdr_base64_to_end<R: Read>(v: TypeVariant, r: &mut Limited<R>) -> Result<Self, Error> {
-            let mut dec = Limited::new(
-                base64::read::DecoderReader::new(
-                    SkipWhitespace::new(&mut r.inner),
-                    &base64::engine::general_purpose::STANDARD,
-                ),
-                r.limits.clone(),
-            );
-            let t = Self::read_xdr_to_end(v, &mut dec)?;
-            Ok(t)
-        }
-
-        #[cfg(feature = "std")]
-        #[allow(clippy::too_many_lines)]
-        pub fn read_xdr_iter<R: Read>(v: TypeVariant, r: &mut Limited<R>) -> Box<dyn Iterator<Item=Result<Self, Error>> + '_> {
-            match v {
-                #{types.map { |t| "TypeVariant::#{t} => Box::new(ReadXdrIter::<_, #{t}>::new(&mut r.inner, r.limits.clone()).map(|r| r.map(|t| Self::#{t}(Box::new(t)))))," }.join("\n")}
-            }
-        }
-
-        #[cfg(feature = "std")]
-        #[allow(clippy::too_many_lines)]
-        pub fn read_xdr_framed_iter<R: Read>(v: TypeVariant, r: &mut Limited<R>) -> Box<dyn Iterator<Item=Result<Self, Error>> + '_> {
-            match v {
-                #{types.map { |t| "TypeVariant::#{t} => Box::new(ReadXdrIter::<_, Frame<#{t}>>::new(&mut r.inner, r.limits.clone()).map(|r| r.map(|t| Self::#{t}(Box::new(t.0)))))," }.join("\n")}
-            }
-        }
-
-        #[cfg(feature = "base64")]
-        #[allow(clippy::too_many_lines)]
-        pub fn read_xdr_base64_iter<R: Read>(v: TypeVariant, r: &mut Limited<R>) -> Box<dyn Iterator<Item=Result<Self, Error>> + '_> {
-            let dec = base64::read::DecoderReader::new(
-                SkipWhitespace::new(&mut r.inner),
-                &base64::engine::general_purpose::STANDARD,
-            );
-            match v {
-                #{types.map { |t| "TypeVariant::#{t} => Box::new(ReadXdrIter::<_, #{t}>::new(dec, r.limits.clone()).map(|r| r.map(|t| Self::#{t}(Box::new(t)))))," }.join("\n")}
-            }
-        }
-
-        #[cfg(feature = "std")]
+        #[cfg(feature = "alloc")]
         pub fn from_xdr<B: AsRef<[u8]>>(v: TypeVariant, bytes: B, limits: Limits) -> Result<Self, Error> {
             let mut cursor = Limited::new(Cursor::new(bytes.as_ref()), limits);
             let t = Self::read_xdr_to_end(v, &mut cursor)?;
             Ok(t)
         }
 
-        #[cfg(feature = "base64")]
-        pub fn from_xdr_base64(v: TypeVariant, b64: impl AsRef<[u8]>, limits: Limits) -> Result<Self, Error> {
-            let mut dec = Limited::new(
-                base64::read::DecoderReader::new(
-                    SkipWhitespace::new(Cursor::new(b64)),
-                    &base64::engine::general_purpose::STANDARD,
-                ),
-                limits,
-            );
-            let t = Self::read_xdr_to_end(v, &mut dec)?;
-            Ok(t)
-        }
+        // TODO: add from_json
 
-        #[cfg(all(feature = "std", feature = "serde_json"))]
-        #[deprecated(note = "use from_json")]
-        pub fn read_json(v: TypeVariant, r: impl Read) -> Result<Self, Error> {
-            Self::from_json(v, r)
-        }
-
-        #[cfg(all(feature = "std", feature = "serde_json"))]
-        #[allow(clippy::too_many_lines)]
-        pub fn from_json(v: TypeVariant, r: impl Read) -> Result<Self, Error> {
-            match v {
-                #{types.map { |t| "TypeVariant::#{t} => Ok(Self::#{t}(Box::new(serde_json::from_reader(r)?)))," }.join("\n")}
-            }
-        }
-
-        #[cfg(all(feature = "std", feature = "serde_json"))]
+        #[cfg(all(feature = "alloc", feature = "serde_json"))]
         #[allow(clippy::too_many_lines)]
         pub fn deserialize_json<'r, R: serde_json::de::Read<'r>>(v: TypeVariant, r: &mut serde_json::de::Deserializer<R>) -> Result<Self, Error> {
             match v {
                 #{types.map { |t| "TypeVariant::#{t} => Ok(Self::#{t}(Box::new(serde::de::Deserialize::deserialize(r)?)))," }.join("\n")}
-            }
-        }
-
-        #[cfg(feature = "arbitrary")]
-        #[allow(clippy::too_many_lines)]
-        pub fn arbitrary(v: TypeVariant, u: &mut arbitrary::Unstructured<'_>) -> Result<Self, Error> {
-            match v {
-                #{types.map { |t| "TypeVariant::#{t} => Ok(Self::#{t}(Box::new(#{t}::arbitrary(u)?)))," }.join("\n")}
             }
         }
 
@@ -354,7 +256,7 @@ class Generator < Xdrgen::Generators::Base
     }
 
     impl WriteXdr for Type {
-        #[cfg(feature = "std")]
+        #[cfg(feature = "alloc")]
         #[allow(clippy::too_many_lines)]
         fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<(), Error> {
             match self {
@@ -426,14 +328,10 @@ class Generator < Xdrgen::Generators::Base
     out.puts %{#[cfg_attr(feature = "alloc", derive(Default))]} if !@options[:custom_default_impl].include?(name struct)
     out.puts "#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]"
     out.puts %{#[cfg_eval::cfg_eval]}
-    out.puts %{#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]}
     if @options[:custom_str_impl].include?(name struct)
       out.puts %{#[cfg_attr(all(feature = "serde", feature = "alloc"), derive(serde_with::SerializeDisplay))]}
     else
       out.puts %{#[cfg_attr(all(feature = "serde", feature = "alloc"), serde_with::serde_as, derive(serde::Serialize, serde::Deserialize), serde(rename_all = "snake_case"))]}
-    end
-    if !@options[:custom_str_impl].include?(name struct)
-      out.puts %{#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]}
     end
     out.puts "pub struct #{name struct} {"
     out.indent do
@@ -446,7 +344,7 @@ class Generator < Xdrgen::Generators::Base
     out.puts ""
     out.puts <<-EOS.strip_heredoc
     impl ReadXdr for #{name struct} {
-        #[cfg(feature = "std")]
+        #[cfg(feature = "alloc")]
         fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self, Error> {
             r.with_limited_depth(|r| {
                 Ok(Self{
@@ -459,7 +357,7 @@ class Generator < Xdrgen::Generators::Base
     }
 
     impl WriteXdr for #{name struct} {
-        #[cfg(feature = "std")]
+        #[cfg(feature = "alloc")]
         fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<(), Error> {
             w.with_limited_depth(|w| {
                 #{struct.members.map do |m|
@@ -516,14 +414,10 @@ class Generator < Xdrgen::Generators::Base
     out.puts "// enum"
     out.puts %{#[cfg_attr(feature = "alloc", derive(Default))]} if !@options[:custom_default_impl].include?(name enum)
     out.puts "#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]"
-    out.puts %{#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]}
     if @options[:custom_str_impl].include?(name enum)
       out.puts %{#[cfg_attr(all(feature = "serde", feature = "alloc"), derive(serde_with::SerializeDisplay, serde_with::DeserializeFromStr))]}
     else
       out.puts %{#[cfg_attr(all(feature = "serde", feature = "alloc"), derive(serde::Serialize, serde::Deserialize), serde(rename_all = "snake_case"))]}
-    end
-    if !@options[:custom_str_impl].include?(name enum)
-      out.puts %{#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]}
     end
     out.puts "#[repr(i32)]"
     out.puts "pub enum #{name enum} {"
@@ -597,7 +491,7 @@ class Generator < Xdrgen::Generators::Base
     }
 
     impl ReadXdr for #{name enum} {
-        #[cfg(feature = "std")]
+        #[cfg(feature = "alloc")]
         fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self, Error> {
             r.with_limited_depth(|r| {
                 let e = i32::read_xdr(r)?;
@@ -608,7 +502,7 @@ class Generator < Xdrgen::Generators::Base
     }
 
     impl WriteXdr for #{name enum} {
-        #[cfg(feature = "std")]
+        #[cfg(feature = "alloc")]
         fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<(), Error> {
             w.with_limited_depth(|w| {
                 let i: i32 = (*self).into();
@@ -650,14 +544,10 @@ class Generator < Xdrgen::Generators::Base
     out.puts "// union with discriminant #{discriminant_type}"
     out.puts %{#[cfg_eval::cfg_eval]}
     out.puts "#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]"
-    out.puts %{#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]}
     if @options[:custom_str_impl].include?(name union)
       out.puts %{#[cfg_attr(all(feature = "serde", feature = "alloc"), derive(serde_with::SerializeDisplay, serde_with::DeserializeFromStr))]}
     else
       out.puts %{#[cfg_attr(all(feature = "serde", feature = "alloc"), serde_with::serde_as, derive(serde::Serialize, serde::Deserialize), serde(rename_all = "snake_case"))]}
-    end
-    if !@options[:custom_str_impl].include?(name union)
-      out.puts %{#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]}
     end
     out.puts "#[allow(clippy::large_enum_variant)]"
     out.puts "pub enum #{name union} {"
@@ -758,7 +648,7 @@ class Generator < Xdrgen::Generators::Base
     impl Union<#{discriminant_type}> for #{name union} {}
 
     impl ReadXdr for #{name union} {
-        #[cfg(feature = "std")]
+        #[cfg(feature = "alloc")]
         fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self, Error> {
             r.with_limited_depth(|r| {
                 let dv: #{discriminant_type} = <#{discriminant_type} as ReadXdr>::read_xdr(r)?;
@@ -780,7 +670,7 @@ class Generator < Xdrgen::Generators::Base
     }
 
     impl WriteXdr for #{name union} {
-        #[cfg(feature = "std")]
+        #[cfg(feature = "alloc")]
         fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<(), Error> {
             w.with_limited_depth(|w| {
                 self.discriminant().write_xdr(w)?;
@@ -815,14 +705,10 @@ class Generator < Xdrgen::Generators::Base
         end
       end
       out.puts "#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]"
-      out.puts %{#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]}
       if is_fixed_array_opaque(typedef.type) || @options[:custom_str_impl].include?(name typedef)
         out.puts %{#[cfg_attr(all(feature = "serde", feature = "alloc"), derive(serde_with::SerializeDisplay, serde_with::DeserializeFromStr))]}
       else
         out.puts %{#[cfg_attr(all(feature = "serde", feature = "alloc"), serde_with::serde_as, derive(serde::Serialize, serde::Deserialize), serde(rename_all = "snake_case"))]}
-      end
-      if !is_fixed_array_opaque(typedef.type) && !@options[:custom_str_impl].include?(name typedef)
-        out.puts %{#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]}
       end
       if !is_fixed_array_opaque(typedef.type)
         out.puts "#[derive(Debug)]"
@@ -868,43 +754,6 @@ class Generator < Xdrgen::Generators::Base
       }
       EOS
       end
-      if is_fixed_array_opaque(typedef.type) && !@options[:custom_str_impl].include?(name typedef)
-      out.puts <<-EOS.strip_heredoc
-      #[cfg(feature = "schemars")]
-      impl schemars::JsonSchema for #{name typedef} {
-          fn schema_name() -> String {
-              "#{name typedef}".to_string()
-          }
-
-          fn is_referenceable() -> bool {
-              false
-          }
-
-          fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-              let schema = String::json_schema(gen);
-              if let schemars::schema::Schema::Object(mut schema) = schema {
-                  schema.extensions.insert(
-                      "contentEncoding".to_owned(),
-                      serde_json::Value::String("hex".to_string()),
-                  );
-                  schema.extensions.insert(
-                      "contentMediaType".to_owned(),
-                      serde_json::Value::String("application/binary".to_string()),
-                  );
-                  let string = *schema.string.unwrap_or_default().clone();
-                  schema.string = Some(Box::new(schemars::schema::StringValidation {
-                      max_length: #{typedef.type.size}_u32.checked_mul(2).map(Some).unwrap_or_default(),
-                      min_length: #{typedef.type.size}_u32.checked_mul(2).map(Some).unwrap_or_default(),
-                      ..string
-                  }));
-                  schema.into()
-              } else {
-                  schema
-              }
-          }
-      }
-      EOS
-      end
       out.puts <<-EOS.strip_heredoc
       impl From<#{name typedef}> for #{reference(typedef, typedef.type)} {
           #[must_use]
@@ -928,7 +777,7 @@ class Generator < Xdrgen::Generators::Base
       }
 
       impl ReadXdr for #{name typedef} {
-          #[cfg(feature = "std")]
+          #[cfg(feature = "alloc")]
           fn read_xdr<R: Read>(r: &mut Limited<R>) -> Result<Self, Error> {
               r.with_limited_depth(|r| {
                   let i = #{reference_to_call(typedef, typedef.type)}::read_xdr(r)?;
@@ -939,7 +788,7 @@ class Generator < Xdrgen::Generators::Base
       }
 
       impl WriteXdr for #{name typedef} {
-          #[cfg(feature = "std")]
+          #[cfg(feature = "alloc")]
           fn write_xdr<W: Write>(&self, w: &mut Limited<W>) -> Result<(), Error> {
               w.with_limited_depth(|w|{ self.0.write_xdr(w) })
           }

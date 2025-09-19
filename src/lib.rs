@@ -1,5 +1,6 @@
+#![no_std]
+
 #![forbid(unsafe_code)]
-#![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docs, feature(doc_auto_cfg))]
 // TODO: Remove these clippy doc comment allows after improving the
 // auto-generated docs.
@@ -129,17 +130,11 @@ pub const VERSION: Version = Version {
     xdr_next: include_str!("../xdr/next-version"),
 };
 
-#[cfg(feature = "schemars")]
-pub mod schemars;
-
 #[cfg(feature = "curr")]
 pub mod curr;
 
 #[cfg(feature = "next")]
 pub mod next;
-
-#[cfg(feature = "cli")]
-pub mod cli;
 
 #[cfg(all(any(feature = "curr", feature = "next"), feature = "alloc"))]
 pub(crate) mod num256;

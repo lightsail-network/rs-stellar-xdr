@@ -7,7 +7,9 @@ mod default;
 mod jsonschema;
 mod str;
 
+#[cfg(feature = "alloc")]
 mod scval_conversions;
+#[cfg(feature = "alloc")]
 pub use scval_conversions::*;
 mod account_conversions;
 mod transaction_conversions;

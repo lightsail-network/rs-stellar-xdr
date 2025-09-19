@@ -1,5 +1,5 @@
 #![cfg(feature = "curr")]
-#![cfg(all(feature = "std", feature = "serde"))]
+#![cfg(all(feature = "alloc", feature = "serde"))]
 
 use stellar_xdr::curr as stellar_xdr;
 
@@ -11,7 +11,7 @@ use stellar_xdr::{
 
 #[cfg(feature = "curr")]
 #[test]
-fn test_serde_tx() -> Result<(), Box<dyn std::error::Error>> {
+fn test_serde_tx() -> Result<(), stellar_xdr::Error> {
     let te = TransactionEnvelope::Tx(TransactionV1Envelope {
         tx: Transaction {
             source_account: MuxedAccount::Ed25519(Uint256([
